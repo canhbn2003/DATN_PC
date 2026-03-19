@@ -1,0 +1,148 @@
+/* LTC admin visual polish for Jazzmin */
+
+:root {
+    --ltc-primary: #0f4c81;
+    --ltc-primary-2: #1b9aaa;
+    --ltc-surface: #f4f7fb;
+    --ltc-card: #ffffff;
+    --ltc-text: #152238;
+    --ltc-muted: #637083;
+    --ltc-border: #d9e2ec;
+}
+
+body,
+.content-wrapper,
+.main-footer {
+    background: linear-gradient(160deg, #f9fbff 0%, #f3f7fc 60%, #eef4fb 100%);
+    color: var(--ltc-text);
+}
+
+.main-header {
+    box-shadow: 0 2px 14px rgba(11, 37, 70, 0.08);
+    border-bottom: 1px solid var(--ltc-border);
+}
+
+.brand-link {
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.main-sidebar {
+    background: linear-gradient(180deg, #12355b 0%, #0f2d4c 100%) !important;
+}
+
+.nav-sidebar .nav-item > .nav-link {
+    border-radius: 10px;
+    margin: 3px 8px;
+    transition: all 0.2s ease;
+}
+
+.nav-sidebar .nav-item > .nav-link.active {
+    background: linear-gradient(90deg, var(--ltc-primary) 0%, var(--ltc-primary-2) 100%) !important;
+    box-shadow: 0 6px 18px rgba(27, 154, 170, 0.35);
+}
+
+.content-header h1,
+.content-header .m-0 {
+    font-weight: 700;
+    letter-spacing: 0.2px;
+}
+
+.card,
+.small-box,
+.info-box,
+.module,
+.change-list .results,
+.change-form .card-body {
+    border: 1px solid var(--ltc-border);
+    border-radius: 14px;
+    box-shadow: 0 6px 22px rgba(16, 46, 78, 0.06);
+    background: var(--ltc-card);
+}
+
+.card-header,
+.module caption {
+    border-bottom: 1px solid var(--ltc-border);
+    background: #f8fbff;
+    font-weight: 600;
+}
+
+.table thead th,
+#result_list thead th {
+    background: #eef5ff;
+    color: #1b3554;
+    border-bottom: 1px solid var(--ltc-border);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+}
+
+.table td,
+#result_list td {
+    vertical-align: middle;
+}
+
+.btn-primary,
+.btn-success,
+input[type="submit"],
+.submit-row input.default {
+    background: linear-gradient(90deg, var(--ltc-primary) 0%, var(--ltc-primary-2) 100%) !important;
+    border: none !important;
+    border-radius: 10px;
+    box-shadow: 0 8px 20px rgba(15, 76, 129, 0.28);
+}
+
+.btn-primary:hover,
+.btn-success:hover,
+input[type="submit"]:hover,
+.submit-row input.default:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 20px rgba(15, 76, 129, 0.3);
+}
+
+input,
+textarea,
+select,
+.form-control {
+    border-radius: 10px !important;
+    border: 1px solid var(--ltc-border) !important;
+    box-shadow: none !important;
+}
+
+input:focus,
+textarea:focus,
+select:focus,
+.form-control:focus {
+    border-color: #90b9dc !important;
+    box-shadow: 0 0 0 3px rgba(27, 154, 170, 0.15) !important;
+}
+
+.breadcrumb {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid var(--ltc-border);
+    border-radius: 999px;
+    padding: 8px 14px;
+}
+
+.pagination .page-link {
+    border-radius: 9px;
+    margin: 0 3px;
+    border-color: var(--ltc-border);
+}
+
+.pagination .page-item.active .page-link {
+    background: var(--ltc-primary);
+    border-color: var(--ltc-primary);
+}
+
+@media (max-width: 991.98px) {
+    .content-wrapper,
+    .main-footer {
+        padding-left: 0;
+    }
+
+    .content-header .breadcrumb {
+        margin-top: 8px;
+    }
+}
