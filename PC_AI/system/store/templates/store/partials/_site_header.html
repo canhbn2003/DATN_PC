@@ -1,0 +1,187 @@
+{% load static %}
+<header class="shop-header" data-user-authenticated="{% if logged_in_user_name %}1{% else %}0{% endif %}">
+    <div class="header-topbar">
+        <div class="container ticker-shell">
+            <div class="ticker-track">
+                <span>Khuyến mãi lớn tuần này - Freeship toàn quốc - Hỗ trợ trả góp 0% - Bảo hành chính hãng tại Showroom</span>
+                <span>Khuyến mãi lớn tuần này - Freeship toàn quốc - Hỗ trợ trả góp 0% - Bảo hành chính hãng tại Showroom</span>
+                <span>Khuyến mãi lớn tuần này - Freeship toàn quốc - Hỗ trợ trả góp 0% - Bảo hành chính hãng tại Showroom</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-header">
+        <div class="container main-header-content">
+            <a href="/" class="logo-wrap" aria-label="Trang chủ">
+                <img src="{% static '1.png' %}" alt="LTC Computer" />
+            </a>
+
+            <div class="header-search">
+                <form class="search-form" role="search" action="/" method="get">
+                    <input type="search" name="q" placeholder="Tìm kiếm sản phẩm..." aria-label="Search" value="{{ search_query|default:'' }}" />
+                    <button type="submit"><i class="bi bi-search"></i> Tìm kiếm</button>
+                </form>
+            </div>
+
+            <div class="header-tools">
+                <div class="tool-item tool-phones">
+                    <i class="bi bi-telephone"></i>
+                    <div>
+                        <small>088888888</small>
+                        <small>1900 0323</small>
+                    </div>
+                </div>
+                <a href="#" class="tool-item build-pc-btn">
+                    <i class="bi bi-pc-display"></i>
+                    <span>Build PC</span>
+                </a>
+                {% if logged_in_user_name %}
+                <div class="auth-user-menu" data-user-menu>
+                    <button type="button" class="tool-item auth-user-trigger" data-user-trigger>
+                        <i class="bi bi-person"></i>
+                        <span>{{ logged_in_user_name }}</span>
+                        <i class="bi bi-chevron-down small"></i>
+                    </button>
+                    <div class="auth-user-dropdown" data-user-dropdown>
+                        <a href="/api/account/" class="auth-user-dropdown-item">Thông tin tài khoản</a>
+                        <a href="/api/orders/" class="auth-user-dropdown-item">Đơn hàng của tôi</a>
+                        <form method="post" action="/api/auth/logout/" class="auth-user-dropdown-form">
+                            {% csrf_token %}
+                            <button type="submit" class="auth-user-dropdown-item auth-user-dropdown-logout">Đăng xuất</button>
+                        </form>
+                    </div>
+                </div>
+                {% else %}
+                <a href="/?auth=login" class="tool-item">
+                    <i class="bi bi-person"></i>
+                    <span>Đăng nhập</span>
+                </a>
+                {% endif %}
+                <a href="{% url 'cart_page' %}" class="tool-item cart-link">
+                    <i class="bi bi-cart3"></i>
+                    <span class="cart-badge">0</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="nav-header">
+        <div class="container nav-header-content">
+            <div class="category-menu-wrap" data-nav-catalog>
+                <button class="category-toggle" type="button"><i class="bi bi-list"></i> DANH MỤC SẢN PHẨM</button>
+                <div class="category-dropdown-menu">
+                    {% for category in categories %}
+                        <div class="category-item-wrap">
+                            <a href="/?category={{ category.id_categories }}" class="category-item">
+                                <span class="category-item-left">
+                                    {% if forloop.counter == 1 %}
+                                        <i class="bi bi-laptop"></i>
+                                    {% elif forloop.counter == 2 %}
+                                        <i class="bi bi-pc-display"></i>
+                                    {% elif forloop.counter == 3 %}
+                                        <i class="bi bi-display"></i>
+                                    {% elif forloop.counter == 4 %}
+                                        <i class="bi bi-keyboard"></i>
+                                    {% elif forloop.counter == 5 %}
+                                        <i class="bi bi-mouse"></i>
+                                    {% else %}
+                                        <i class="bi bi-grid-3x3-gap"></i>
+                                    {% endif %}
+                                    <span>{{ category.name_categories }}</span>
+                                </span>
+                                <i class="bi bi-chevron-right category-item-arrow"></i>
+                            </a>
+
+                            {% if category.brand_list %}
+                            <div class="category-submenu">
+                                <div class="submenu-col">
+                                    <div class="submenu-title">Thương hiệu</div>
+                                    {% for brand in category.brand_list %}
+                                        <a href="/?category={{ category.id_categories }}&brand={{ brand|urlencode }}" class="submenu-link">{{ brand }}</a>
+                                    {% endfor %}
+                                </div>
+                                <div class="submenu-col">
+                                    <div class="submenu-title">Giá bán</div>
+                                    <a href="/?category={{ category.id_categories }}&price_range=lt5" class="submenu-link">Dưới 5 triệu</a>
+                                    <a href="/?category={{ category.id_categories }}&price_range=lt15" class="submenu-link">Dưới 15 triệu</a>
+                                    <a href="/?category={{ category.id_categories }}&price_range=15-20" class="submenu-link">Từ 15 đến 20 triệu</a>
+                                    <a href="/?category={{ category.id_categories }}&price_range=gt20" class="submenu-link">Trên 20 triệu</a>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% empty %}
+                        <span>Chưa có danh mục</span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="service-links">
+                <a href="{% url 'flash_sale_page' %}" data-nav-match="{% url 'flash_sale_page' %}"><i class="bi bi-lightning-charge-fill"></i> Mã giảm giá</a>
+                <a href="{% url 'viewed_products_page' %}" data-nav-match="{% url 'viewed_products_page' %}"><i class="bi bi-truck"></i> Sản phẩm đã xem</a>
+                <a href="#"><i class="bi bi-arrow-repeat"></i> Easy Returns</a>
+                <a href="#"><i class="bi bi-shield-check"></i> Genuine Warranty</a>
+                <a href="/admin/" data-nav-match="/admin/"><i class="bi bi-speedometer2"></i> Admin</a>
+            </div>
+        </div>
+    </div>
+</header>
+
+<script>
+(function () {
+    const navCategoryWrap = document.querySelector("[data-nav-catalog]");
+    const navLinks = document.querySelectorAll(".service-links [data-nav-match]");
+    const currentPath = window.location.pathname;
+    const searchParams = new URLSearchParams(window.location.search);
+
+    const isCatalogPage =
+        currentPath === "/"
+        || currentPath.startsWith("/products/")
+        || ["category", "brand", "price_range", "q"].some((key) => searchParams.get(key));
+
+    if (navCategoryWrap && isCatalogPage) {
+        navCategoryWrap.classList.add("is-active");
+    }
+
+    navLinks.forEach((link) => {
+        const matchPath = (link.dataset.navMatch || "").trim();
+        if (!matchPath) return;
+
+        const isActive = currentPath === matchPath || currentPath.startsWith(matchPath);
+        if (isActive) {
+            link.classList.add("is-active");
+        }
+    });
+
+    const userMenus = document.querySelectorAll("[data-user-menu]");
+    userMenus.forEach((menu) => {
+        const trigger = menu.querySelector("[data-user-trigger]");
+        if (!trigger) return;
+
+        trigger.addEventListener("click", (event) => {
+            event.stopPropagation();
+            menu.classList.toggle("open");
+        });
+    });
+
+    document.addEventListener("click", () => {
+        userMenus.forEach((menu) => menu.classList.remove("open"));
+    });
+
+    const badges = document.querySelectorAll(".cart-badge");
+    if (!badges.length) return;
+
+    let count = 0;
+    try {
+        const raw = localStorage.getItem("pcai_cart");
+        const items = raw ? JSON.parse(raw) : [];
+        count = Array.isArray(items) ? items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) : 0;
+    } catch (error) {
+        count = 0;
+    }
+
+    badges.forEach((badge) => {
+        badge.textContent = String(count);
+    });
+})();
+</script>

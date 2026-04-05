@@ -1,0 +1,506 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    {% now "U" as css_version %}
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ product.name }} - LTC Computer</title>
+    <link
+        href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+        rel="stylesheet"
+    />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css?v={{ css_version }}" />
+    <link rel="stylesheet" href="{% static 'store/site.css' %}?v={{ css_version }}" />
+</head>
+<body>
+    {% include 'store/partials/_site_header.html' %}
+
+    <main class="catalog-main py-4">
+        <div class="container">
+            <section class="product-detail-page">
+                <nav class="breadcrumb-trail" aria-label="breadcrumb">
+                    <a href="/">Trang chủ</a>
+                    <i class="bi bi-chevron-right"></i>
+                    {% if product.category_id %}
+                    <a href="/?category={{ product.category_id }}">{{ product.category }}</a>
+                    <i class="bi bi-chevron-right"></i>
+                    {% else %}
+                    <span>{{ product.category }}</span>
+                    <i class="bi bi-chevron-right"></i>
+                    {% endif %}
+                    {% if product.brand_slug %}
+                    <a href="/?brand={{ product.brand_slug|urlencode }}">{{ product.brand }}</a>
+                    <i class="bi bi-chevron-right"></i>
+                    {% else %}
+                    <span>{{ product.brand }}</span>
+                    <i class="bi bi-chevron-right"></i>
+                    {% endif %}
+                    <span>{{ product.name }}</span>
+                </nav>
+
+                <div class="product-detail-grid">
+                    <article class="gallery-card">
+                        <div class="gallery-main-wrap">
+                            {% if product.primary_image %}
+                            <img
+                                id="mainProductImage"
+                                class="gallery-main-image"
+                                src="{{ product.primary_image }}"
+                                alt="{{ product.name }}"
+                            />
+                            {% else %}
+                            <div class="placeholder-image d-flex align-items-center justify-content-center text-secondary">
+                                No image
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        {% if product.gallery|length > 1 %}
+                        <div class="thumb-slider-wrap">
+                            <button type="button" class="thumb-nav" data-thumb-nav="prev" aria-label="Ảnh trước">
+                                <i class="bi bi-chevron-left"></i>
+                            </button>
+
+                            <div class="thumb-strip" data-thumb-strip>
+                                {% for image_url in product.gallery %}
+                                <button type="button" class="thumb-item {% if forloop.first %}active{% endif %}" data-image="{{ image_url }}">
+                                    <img src="{{ image_url }}" alt="{{ product.name }} - {{ forloop.counter }}" />
+                                </button>
+                                {% endfor %}
+                            </div>
+
+                            <button type="button" class="thumb-nav" data-thumb-nav="next" aria-label="Ảnh tiếp theo">
+                                <i class="bi bi-chevron-right"></i>
+                            </button>
+                        </div>
+                        {% endif %}
+
+                        <section class="product-description">
+                            <h3 class="product-description-title">Mô tả sản phẩm</h3>
+                            {% if description_table %}
+                                <div class="description-table-wrap">
+                                    <table class="description-specs-table">
+                                        <tbody>
+                                            {% for item in description_table %}
+                                                <tr>
+                                                    <th>{{ item.label }}</th>
+                                                    <td>{{ item.value }}</td>
+                                                </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            {% else %}
+                                <p class="product-description-content">{{ product.description|linebreaksbr }}</p>
+                            {% endif %}
+                        </section>
+                    </article>
+
+                    <article class="info-card">
+                        <h1 class="product-detail-title">{{ product.name }}</h1>
+
+                        <div class="meta-row">
+                            <span>Thương hiệu: <strong>{{ product.brand }}</strong></span>
+                            <span class="meta-divider">|</span>
+                            <span>Danh mục: {{ product.category }}</span>
+                        </div>
+                        
+                        <div class="meta-row product-social-proof">
+                            
+                            {% comment %} <span class="rating-value">{{ product.rating_value }} sao</span> {% endcomment %}
+                            <span class="meta-divider">|</span>
+                            <span>Đã bán: <strong>{{ product.sold_count }}</strong></span>
+                        </div>
+
+                        <ul class="highlight-list">
+    <span class="rating-stars" aria-label="Đánh giá {{ product.rating_value }} sao">
+        <span class="rating-text">Đánh giá:</span>
+        <i class="bi bi-star-fill"></i>
+        <i class="bi bi-star-fill"></i>
+        <i class="bi bi-star-fill"></i>
+        <i class="bi bi-star-fill"></i>
+        <i class="bi bi-star-half"></i>
+    </span>
+
+    <li><i class="bi bi-check-circle-fill"></i> Sản phẩm chính hãng, đầy đủ hóa đơn và bảo hành.</li>
+    <li><i class="bi bi-check-circle-fill"></i> Hỗ trợ cài đặt và tư vấn kỹ thuật 1-1.</li>
+    <li><i class="bi bi-check-circle-fill"></i> Giao hàng nhanh nội thành, đóng gói chuẩn an toàn.</li>
+</ul>
+
+                        <section class="price-box">
+                            <div class="price-row">
+                                <span>Giá niêm yết:</span>
+                                <span class="original-price">{{ product.old_price }} đ</span>
+                            </div>
+                            {% if product.has_discount %}
+                            {% comment %} <div class="price-row">
+                                <span>Giảm trực tiếp:</span>
+                                <span class="text-success">-{{ product.discount_amount }} đ{% if product.discount_name %} ({{ product.discount_name }}){% endif %}</span>
+                            </div> {% endcomment %}
+                            {% endif %}
+                            <div class="price-row sale">
+                                <span>Giá khuyến mãi:</span>
+                                <span class="sale-price">{{ product.price }} đ</span>
+                            </div>
+                            <p class="promo-note">Giá đã bao gồm VAT. Có thể thay đổi theo chương trình ưu đãi.</p>
+                        </section>
+
+                        <div class="cta-block">
+                            <div class="cta-row">
+                                <button
+                                    type="button"
+                                    class="btn-add-cart"
+                                    data-cart-add
+                                    data-product-id="{{ product.id }}"
+                                    data-product-name="{{ product.name|escape }}"
+                                    data-product-brand="{{ product.brand|default:'N/A'|escape }}"
+                                    data-product-price="{{ product.price|cut:',' }}"
+                                    data-product-image="{{ product.primary_image|default:''|escape }}"
+                                >
+                                    <i class="bi bi-cart-plus-fill"></i> THÊM VÀO GIỎ
+                                </button>
+                                {% comment %} <button
+                                    type="button"
+                                    class="btn-buy-now"
+                                    data-cart-buy-now
+                                    data-product-id="{{ product.id }}"
+                                    data-product-name="{{ product.name|escape }}"
+                                    data-product-brand="{{ product.brand|default:'N/A'|escape }}"
+                                    data-product-price="{{ product.price|cut:',' }}"
+                                    data-product-image="{{ product.primary_image|default:''|escape }}"
+                                >
+                                    MUA NGAY
+                                </button> {% endcomment %}
+                            </div>
+                        </div>
+
+                        <section class="promotion-box gaming-promo">
+                            <h2><i class="bi bi-gift-fill"></i> 🎮 KHUYẾN MÃI HOT</h2>
+                            <ul>
+                                <li><span class="promo-item-text"><i class="bi bi-lightning-charge-fill me-1"></i> Giảm ngay đến 25% cho sản phẩm cấu hình gaming.</span></li>
+                                <li><span class="promo-item-text"><i class="bi bi-ticket-perforated-fill me-1"></i> Nhập mã HOTSALE để được ưu đãi trực tiếp tại giỏ hàng.</span></li>
+                                <li><span class="promo-item-text"><i class="bi bi-truck me-1"></i> Miễn phí giao hàng nội thành cho đơn từ 500.000đ.</span></li>
+                                <li><span class="promo-item-text"><i class="bi bi-shield-check me-1"></i> Tặng gói bảo hành mở rộng lên đến 12 tháng.</span></li>
+                                <li><span class="promo-item-text"><i class="bi bi-headset me-1"></i> Hỗ trợ kỹ thuật 1-1 và cài đặt miễn phí khi nhận máy.</span></li>
+                                <li><span class="promo-item-text"><i class="bi bi-gift-fill me-1"></i> Tặng combo phụ kiện trị giá đến 500.000đ (số lượng có hạn).</span></li>
+                            </ul>
+                        </section>
+                    </article>
+                </div>
+
+                {% comment %} <section class="specs-card">
+                    <h2>THÔNG SỐ KỸ THUẬT</h2>
+                    <div class="table-responsive">
+                        <table class="specs-table">
+                            <tbody>
+                                {% for spec in product_specs %}
+                                <tr>
+                                    <th>{{ spec.spec_name_product }}</th>
+                                    <td>{{ spec.spec_value_product }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <th>Thông báo</th>
+                                    <td>Sản phẩm chưa có thông số kỹ thuật.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </section> {% endcomment %}
+            </section>
+        </div>
+    </main>
+
+    {% include 'store/partials/_site_footer.html' %}
+
+    {% if messages %}
+    <div class="auth-toast-stack">
+        {% for message in messages %}
+        <div class="auth-toast {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div id="authModal" class="auth-modal-overlay{% if auth_tab == 'login' or auth_tab == 'register' %} open{% endif %}" aria-hidden="true" data-default-tab="{% if auth_tab == 'register' %}register{% else %}login{% endif %}">
+        <div class="auth-modal" role="dialog" aria-modal="true" aria-label="Đăng nhập và đăng ký">
+            <button type="button" class="auth-close-btn" data-auth-close aria-label="Đóng">&times;</button>
+
+            <h2>Chào mừng bạn!</h2>
+
+            <div class="auth-tabs" role="tablist">
+                <button type="button" class="auth-tab-btn{% if auth_tab != 'register' %} active{% endif %}" data-auth-tab="login" role="tab">Đăng nhập</button>
+                <button type="button" class="auth-tab-btn{% if auth_tab == 'register' %} active{% endif %}" data-auth-tab="register" role="tab">Đăng ký</button>
+            </div>
+
+            <div class="auth-panel{% if auth_tab != 'register' %} active{% endif %}" data-auth-panel="login">
+                <form method="post" action="/api/auth/login/" class="auth-form">
+                    {% csrf_token %}
+                    <label>Email <span>*</span></label>
+                    <input type="email" name="email" required placeholder="Nhập email" />
+
+                    <label>Mật khẩu <span>*</span></label>
+                    <div class="auth-password-field">
+                        <input type="password" name="password" required minlength="6" placeholder="Nhập mật khẩu" />
+                        <button type="button" class="auth-toggle-password" data-auth-eye>👁</button>
+                    </div>
+
+                    <button type="submit" class="auth-submit-btn">Đăng nhập</button>
+                </form>
+            </div>
+
+            <div class="auth-panel{% if auth_tab == 'register' %} active{% endif %}" data-auth-panel="register">
+                <form method="post" action="/api/auth/register/" class="auth-form">
+                    {% csrf_token %}
+                    <label>Họ và tên <span>*</span></label>
+                    <input type="text" name="name_users" required maxlength="100" placeholder="Nhập họ và tên" value="{{ register_old.name_users|default:'' }}" />
+
+                    <label>Email <span>*</span></label>
+                    <input type="email" name="email" required placeholder="Nhập email" value="{{ register_old.email|default:'' }}" class="{% if register_errors.email %}auth-input-error{% endif %}" />
+                    {% if register_errors.email %}
+                    <small class="auth-field-error">{{ register_errors.email }}</small>
+                    {% endif %}
+
+                    <label>Giới tính</label>
+                    <input type="text" name="gender_users" maxlength="10" placeholder="Nam/Nữ/Khác" value="{{ register_old.gender_users|default:'' }}" />
+
+                    <label>Số điện thoại</label>
+                    <input type="text" name="phone_users" maxlength="20" placeholder="Nhập số điện thoại" value="{{ register_old.phone_users|default:'' }}" />
+
+                    <label>Địa chỉ</label>
+                    <input type="text" name="address_users" maxlength="255" placeholder="Nhập địa chỉ" value="{{ register_old.address_users|default:'' }}" />
+
+                    <label>Mật khẩu <span>*</span></label>
+                    <div class="auth-password-field">
+                        <input type="password" name="password" required minlength="6" placeholder="Nhập mật khẩu" />
+                        <button type="button" class="auth-toggle-password" data-auth-eye>👁</button>
+                    </div>
+
+                    <label>Xác nhận mật khẩu <span>*</span></label>
+                    <div class="auth-password-field">
+                        <input type="password" name="confirm_password" required minlength="6" placeholder="Nhập lại mật khẩu" />
+                        <button type="button" class="auth-toggle-password" data-auth-eye>👁</button>
+                    </div>
+
+                    <button type="submit" class="auth-submit-btn">Đăng ký</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'store/cart.js' %}?v={{ css_version }}"></script>
+    <script>
+        (function () {
+            const modal = document.getElementById("authModal");
+            if (!modal) return;
+
+            const openButtons = document.querySelectorAll("[data-auth-open]");
+            const closeButton = modal.querySelector("[data-auth-close]");
+            const tabs = modal.querySelectorAll("[data-auth-tab]");
+            const panels = modal.querySelectorAll("[data-auth-panel]");
+            const eyeButtons = modal.querySelectorAll("[data-auth-eye]");
+            let overlayPointerDown = false;
+
+            const openModal = () => {
+                modal.classList.add("open");
+                modal.setAttribute("aria-hidden", "false");
+            };
+
+            const closeModal = () => {
+                modal.classList.remove("open");
+                modal.setAttribute("aria-hidden", "true");
+            };
+
+            const switchTab = (tabName) => {
+                tabs.forEach((tab) => {
+                    tab.classList.toggle("active", tab.dataset.authTab === tabName);
+                });
+                panels.forEach((panel) => {
+                    panel.classList.toggle("active", panel.dataset.authPanel === tabName);
+                });
+            };
+
+            openButtons.forEach((btn) => btn.addEventListener("click", openModal));
+            if (closeButton) closeButton.addEventListener("click", closeModal);
+
+            modal.addEventListener("pointerdown", (event) => {
+                overlayPointerDown = event.target === modal;
+            });
+
+            modal.addEventListener("pointerup", (event) => {
+                const isOverlayUp = event.target === modal;
+                const hasSelection = (window.getSelection && window.getSelection().toString().length > 0);
+                if (overlayPointerDown && isOverlayUp && !hasSelection) {
+                    closeModal();
+                }
+                overlayPointerDown = false;
+            });
+
+            tabs.forEach((tab) => {
+                tab.addEventListener("click", () => switchTab(tab.dataset.authTab));
+            });
+
+            eyeButtons.forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    const input = btn.parentElement.querySelector("input");
+                    if (!input) return;
+                    input.type = input.type === "password" ? "text" : "password";
+                });
+            });
+
+            const defaultTab = modal.dataset.defaultTab === "register" ? "register" : "login";
+            switchTab(defaultTab);
+
+            const mainImage = document.getElementById("mainProductImage");
+            const thumbStrip = document.querySelector("[data-thumb-strip]");
+            const thumbButtons = document.querySelectorAll(".thumb-item");
+            const thumbPrev = document.querySelector("[data-thumb-nav='prev']");
+            const thumbNext = document.querySelector("[data-thumb-nav='next']");
+
+            if (mainImage && thumbStrip && thumbButtons.length) {
+                thumbButtons.forEach((button) => {
+                    button.addEventListener("click", () => {
+                        const selectedImage = button.dataset.image;
+                        if (!selectedImage) return;
+
+                        mainImage.src = selectedImage;
+                        thumbButtons.forEach((item) => item.classList.remove("active"));
+                        button.classList.add("active");
+                    });
+                });
+
+                if (thumbPrev) {
+                    thumbPrev.addEventListener("click", () => {
+                        thumbStrip.scrollBy({ left: -140, behavior: "smooth" });
+                    });
+                }
+
+                if (thumbNext) {
+                    thumbNext.addEventListener("click", () => {
+                        thumbStrip.scrollBy({ left: 140, behavior: "smooth" });
+                    });
+                }
+            }
+
+            const addToCartButton = document.querySelector("[data-cart-add]");
+            if (addToCartButton && window.PCAI_CART) {
+                addToCartButton.addEventListener("click", () => {
+                    if (typeof window.PCAI_CART.requireLoginForCartAction === "function") {
+                        if (!window.PCAI_CART.requireLoginForCartAction()) {
+                            return;
+                        }
+                    }
+
+                    const productPayload = {
+                        id: Number.parseInt(addToCartButton.dataset.productId, 10) || 0,
+                        name: addToCartButton.dataset.productName || "Sản phẩm",
+                        brand: addToCartButton.dataset.productBrand || "N/A",
+                        price: Number.parseFloat(addToCartButton.dataset.productPrice || "0") || 0,
+                        image: addToCartButton.dataset.productImage || "",
+                        quantity: 1
+                    };
+
+                    if (!productPayload.id) return;
+
+                    window.PCAI_CART.addItem(productPayload, 1);
+
+                    fetch("/api/behavior/", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            product_id: productPayload.id,
+                            action: "add_to_cart"
+                        })
+                    }).catch(() => {
+                        // Ignore tracking failure to avoid affecting cart action.
+                    });
+
+                    window.PCAI_CART.showToast("Đã thêm sản phẩm vào giỏ hàng", "success");
+
+                    const defaultLabel = "THÊM VÀO GIỎ";
+                    addToCartButton.textContent = "ĐÃ THÊM";
+                    addToCartButton.disabled = true;
+
+                    setTimeout(() => {
+                        addToCartButton.textContent = defaultLabel;
+                        addToCartButton.disabled = false;
+                    }, 1000);
+                });
+            }
+
+            const buyNowButton = document.querySelector("[data-cart-buy-now]");
+            if (buyNowButton && window.PCAI_CART) {
+                buyNowButton.addEventListener("click", () => {
+                    if (typeof window.PCAI_CART.requireLoginForCartAction === "function") {
+                        if (!window.PCAI_CART.requireLoginForCartAction()) {
+                            return;
+                        }
+                    }
+
+                    const productPayload = {
+                        id: Number.parseInt(buyNowButton.dataset.productId, 10) || 0,
+                        name: buyNowButton.dataset.productName || "Sản phẩm",
+                        brand: buyNowButton.dataset.productBrand || "N/A",
+                        price: Number.parseFloat(buyNowButton.dataset.productPrice || "0") || 0,
+                        image: buyNowButton.dataset.productImage || "",
+                        quantity: 1
+                    };
+
+                    if (!productPayload.id) return;
+
+                        // Add to cart (no clear)
+                    window.PCAI_CART.addItem(productPayload, 1);
+
+                        // Save cart to session
+                    const cartItems = window.PCAI_CART.getCart();
+                    fetch("/api/cart/save-to-session/", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({ cart_items: cartItems })
+                    }).catch(() => {
+                        // Continue even if save fails
+                    });
+
+                        // Also set buy_now product ID in session via a special endpoint
+                        fetch("/api/cart/set-buy-now/", {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json"
+                            },
+                            body: JSON.stringify({ product_id: productPayload.id })
+                        }).catch(() => {
+                            // Continue even if fails
+                        });
+
+                    fetch("/api/behavior/", {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify({
+                            product_id: productPayload.id,
+                            action: "buy_now"
+                        })
+                    }).catch(() => {
+                        // Ignore tracking failure to avoid affecting purchase action.
+                    });
+
+                    buyNowButton.disabled = true;
+                    // Wait a bit for session to save, then redirect
+                    setTimeout(() => {
+                        window.location.href = "/checkout/";
+                    }, 300);
+                });
+            }
+        })();
+    </script>
+
+</body>
+</html>
+

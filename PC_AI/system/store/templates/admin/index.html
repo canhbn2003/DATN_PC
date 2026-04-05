@@ -1,0 +1,312 @@
+{% extends "admin/base_site.html" %}
+{% load static admin_dashboard %}
+
+{% block title %}Bảng điều khiển quản trị{% endblock %}
+
+{% block extrastyle %}
+    {{ block.super }}
+    <link rel="stylesheet" href="{% static 'store/admin/admin_dashboard.css' %}" />
+{% endblock %}
+
+{% block content %}
+{% admin_dashboard_data as dashboard %}
+
+<div class="ltc-dashboard-shell">
+    <section class="ltc-dashboard-hero">
+        <div>
+            <p class="ltc-dashboard-kicker">Analytics Dashboard</p>
+            <h1>Quản trị LTC Computer</h1>
+            <p class="ltc-dashboard-subtitle">Tổng quan vận hành, doanh thu, đơn hàng và xu hướng bán hàng theo thời gian thực.</p>
+        </div>
+        <div class="ltc-dashboard-actions">
+            <a class="ltc-action-btn primary" href="{% url 'admin:store_order_changelist' %}"><i class="fas fa-file-invoice"></i> Đơn hàng</a>
+            <a class="ltc-action-btn" href="{% url 'admin:store_product_changelist' %}"><i class="fas fa-microchip"></i> Sản phẩm</a>
+        </div>
+    </section>
+
+    <section class="ltc-metric-grid">
+        <article class="ltc-metric-card blue">
+            <div class="metric-icon"><i class="fas fa-box-open"></i></div>
+            <div>
+                <span class="metric-label">Sản phẩm</span>
+                <strong>{{ dashboard.metrics.total_products }}</strong>
+                <small>{{ dashboard.metrics.total_categories }} danh mục</small>
+            </div>
+        </article>
+
+        <article class="ltc-metric-card pink">
+            <div class="metric-icon"><i class="fas fa-receipt"></i></div>
+            <div>
+                <span class="metric-label">Đơn hàng</span>
+                <strong>{{ dashboard.metrics.total_orders }}</strong>
+                <small>{{ dashboard.metrics.pending_orders }} đơn chờ xử lý</small>
+            </div>
+        </article>
+
+        <article class="ltc-metric-card green">
+            <div class="metric-icon"><i class="fas fa-coins"></i></div>
+            <div>
+                <span class="metric-label">Doanh thu</span>
+                <strong>{{ dashboard.metrics.total_revenue_display }}</strong>
+                <small>{{ dashboard.metrics.active_promotions }} mã đang chạy</small>
+            </div>
+        </article>
+
+        <article class="ltc-metric-card violet">
+            <div class="metric-icon"><i class="fas fa-users"></i></div>
+            <div>
+                <span class="metric-label">Người dùng</span>
+                <strong>{{ dashboard.metrics.total_users }}</strong>
+                <small>{{ dashboard.metrics.low_stock_count }} sản phẩm sắp hết hàng</small>
+            </div>
+        </article>
+    </section>
+
+    <section class="ltc-analytics-grid">
+        <article class="ltc-panel ltc-panel-wide">
+            <div class="ltc-panel-head">
+                <div>
+                    <h2>Doanh thu 7 ngày</h2>
+                    <p>Biểu đồ tăng trưởng đơn hàng và doanh thu gần nhất.</p>
+                </div>
+                <span class="ltc-panel-badge">Chart.js</span>
+            </div>
+            <div class="ltc-chart-wrap">
+                <canvas id="revenueChart"></canvas>
+            </div>
+        </article>
+
+        <article class="ltc-panel">
+            <div class="ltc-panel-head">
+                <div>
+                    <h2>Trạng thái đơn</h2>
+                    <p>Phân bố trạng thái hiện tại của đơn hàng.</p>
+                </div>
+            </div>
+            <div class="ltc-chart-wrap compact">
+                <canvas id="statusChart"></canvas>
+            </div>
+        </article>
+    </section>
+
+    <section class="ltc-lower-grid">
+        <article class="ltc-panel">
+            <div class="ltc-panel-head">
+                <div>
+                    <h2>Sản phẩm bán chạy</h2>
+                    <p>Sản phẩm được mua nhiều nhất theo số lượng.</p>
+                </div>
+            </div>
+            <div class="ltc-chart-wrap compact">
+                <canvas id="topProductsChart"></canvas>
+            </div>
+        </article>
+
+        <article class="ltc-panel">
+            <div class="ltc-panel-head">
+                <div>
+                    <h2>Truy cập nhanh</h2>
+                    <p>Đi thẳng tới các mục thao tác thường dùng.</p>
+                </div>
+            </div>
+            <div class="ltc-quick-links">
+                <a href="{% url 'admin:store_product_changelist' %}"><i class="fas fa-microchip"></i><span>Sản phẩm</span></a>
+                <a href="{% url 'admin:store_discount_changelist' %}"><i class="fas fa-tags"></i><span>SALE</span></a>
+                <a href="{% url 'admin:store_promotion_changelist' %}"><i class="fas fa-ticket-alt"></i><span>Mã giảm giá</span></a>
+                <a href="{% url 'admin:store_order_changelist' %}"><i class="fas fa-truck"></i><span>Đơn hàng</span></a>
+                <a href="{% url 'admin:store_category_changelist' %}"><i class="fas fa-layer-group"></i><span>Danh mục</span></a>
+                <a href="{% url 'admin:store_user_changelist' %}"><i class="fas fa-users"></i><span>Người dùng</span></a>
+            </div>
+        </article>
+    </section>
+
+    <section class="ltc-lower-grid">
+        <article class="ltc-panel">
+            <div class="ltc-panel-head">
+                <div>
+                    <h2>Đơn hàng gần đây</h2>
+                    <p>Những giao dịch mới nhất trong hệ thống.</p>
+                </div>
+            </div>
+            <div class="ltc-table-wrap">
+                <table class="ltc-table">
+                    <thead>
+                        <tr>
+                            <th>Mã</th>
+                            <th>Khách hàng</th>
+                            <th>Trạng thái</th>
+                            <th>SL</th>
+                            <th>Tổng</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for order in dashboard.recent_orders %}
+                        <tr>
+                            <td>#{{ order.id }}</td>
+                            <td>
+                                <strong>{{ order.buyer }}</strong>
+                                <small>{{ order.created_display }}</small>
+                            </td>
+                            <td><span class="badge badge-{{ order.status_badge }}">{{ order.status_label }}</span></td>
+                            <td>{{ order.item_count }}</td>
+                            <td>{{ order.total_display }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="ltc-empty">Chưa có đơn hàng nào.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </article>
+
+        <article class="ltc-panel">
+            <div class="ltc-panel-head">
+                <div>
+                    <h2>Sản phẩm sắp hết hàng</h2>
+                    <p>Cần ưu tiên nhập thêm sớm.</p>
+                </div>
+            </div>
+            <div class="ltc-low-stock-list">
+                {% for product in dashboard.low_stock_products %}
+                <div class="ltc-low-stock-item">
+                    <div>
+                        <strong>{{ product.name }}</strong>
+                        <small>{{ product.brand }} • {{ product.category }}</small>
+                    </div>
+                    <span class="stock-pill {% if product.stock <= 3 %}danger{% else %}warning{% endif %}">{{ product.stock }}</span>
+                </div>
+                {% empty %}
+                <p class="ltc-empty">Không có sản phẩm sắp hết hàng.</p>
+                {% endfor %}
+            </div>
+        </article>
+    </section>
+</div>
+
+{{ dashboard.daily_labels|json_script:"ltc-daily-labels" }}
+{{ dashboard.daily_revenue|json_script:"ltc-daily-revenue" }}
+{{ dashboard.daily_orders|json_script:"ltc-daily-orders" }}
+{{ dashboard.status_labels|json_script:"ltc-status-labels" }}
+{{ dashboard.status_values|json_script:"ltc-status-values" }}
+{{ dashboard.top_products_labels|json_script:"ltc-top-products-labels" }}
+{{ dashboard.top_products_values|json_script:"ltc-top-products-values" }}
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script>
+    (function () {
+        const getJson = (id) => JSON.parse(document.getElementById(id).textContent || "[]");
+
+        const labels = getJson("ltc-daily-labels");
+        const revenue = getJson("ltc-daily-revenue");
+        const orders = getJson("ltc-daily-orders");
+        const statusLabels = getJson("ltc-status-labels");
+        const statusValues = getJson("ltc-status-values");
+        const topLabels = getJson("ltc-top-products-labels");
+        const topValues = getJson("ltc-top-products-values");
+
+        const revenueCanvas = document.getElementById("revenueChart");
+        if (revenueCanvas && window.Chart) {
+            new Chart(revenueCanvas, {
+                type: "line",
+                data: {
+                    labels,
+                    datasets: [
+                        {
+                            label: "Doanh thu",
+                            data: revenue,
+                            borderColor: "#2563eb",
+                            backgroundColor: "rgba(37, 99, 235, 0.12)",
+                            tension: 0.35,
+                            fill: true,
+                            pointRadius: 4,
+                            pointBackgroundColor: "#2563eb",
+                        },
+                        {
+                            label: "Đơn hàng",
+                            data: orders,
+                            borderColor: "#ec4899",
+                            backgroundColor: "rgba(236, 72, 153, 0.08)",
+                            tension: 0.35,
+                            fill: false,
+                            pointRadius: 4,
+                            pointBackgroundColor: "#ec4899",
+                        },
+                    ],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: "bottom" },
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            grid: { color: "rgba(148, 163, 184, 0.18)" },
+                        },
+                        x: {
+                            grid: { display: false },
+                        },
+                    },
+                },
+            });
+        }
+
+        const statusCanvas = document.getElementById("statusChart");
+        if (statusCanvas && window.Chart) {
+            new Chart(statusCanvas, {
+                type: "doughnut",
+                data: {
+                    labels: statusLabels,
+                    datasets: [{
+                        data: statusValues,
+                        backgroundColor: ["#f59e0b", "#06b6d4", "#3b82f6", "#22c55e", "#ef4444"],
+                        borderWidth: 0,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    cutout: "68%",
+                    plugins: {
+                        legend: { position: "bottom" },
+                    },
+                },
+            });
+        }
+
+        const topCanvas = document.getElementById("topProductsChart");
+        if (topCanvas && window.Chart) {
+            new Chart(topCanvas, {
+                type: "bar",
+                data: {
+                    labels: topLabels,
+                    datasets: [{
+                        label: "Số lượng bán",
+                        data: topValues,
+                        backgroundColor: ["#0f4c81", "#1b9aaa", "#2563eb", "#8b5cf6", "#ec4899", "#f59e0b"],
+                        borderRadius: 10,
+                    }],
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                    },
+                    indexAxis: "y",
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            grid: { color: "rgba(148, 163, 184, 0.18)" },
+                        },
+                        y: {
+                            grid: { display: false },
+                        },
+                    },
+                },
+            });
+        }
+    })();
+</script>
+{% endblock %}

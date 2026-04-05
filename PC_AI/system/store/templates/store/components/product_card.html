@@ -1,0 +1,46 @@
+<article
+    class="product-card card border-0 shadow-sm w-100"
+    data-product-card
+    data-product-detail-url="{% url 'product_detail_page' product.id_products %}"
+    role="link"
+    tabindex="0"
+>
+    <div class="product-image-wrap">
+        {% if product.has_discount and product.discount_badge %}
+            <span class="product-discount-badge">{{ product.discount_badge }}</span>
+        {% endif %}
+        {% if product.primary_image_url %}
+            <img src="{{ product.primary_image_url }}" class="card-img-top" alt="{{ product.name_products }}" />
+        {% else %}
+            <div class="placeholder-image d-flex align-items-center justify-content-center text-secondary">
+                No image
+            </div>
+        {% endif %}
+    </div>
+    <div class="card-body d-flex flex-column">
+        <p class="product-brand">{{ product.brand|default:'Unknown Brand' }}</p>
+        <h3 class="product-name">{{ product.name_products }}</h3>
+        <p class="product-category">{{ product.id_categories.name_categories|default:'Khác' }}</p>
+        <div class="product-bottom mt-auto">
+            <div class="d-flex flex-column">
+                <span class="product-price">{{ product.display_price }} đ</span>
+                {% if product.has_discount %}
+                    <small class="text-muted text-decoration-line-through">{{ product.old_price }} đ</small>
+                {% endif %}
+            </div>
+            <button
+                type="button"
+                class="product-cart-icon-btn"
+                data-card-add-cart
+                data-product-id="{{ product.id_products }}"
+                data-product-name="{{ product.name_products|escape }}"
+                data-product-brand="{{ product.brand|default:'N/A'|escape }}"
+                data-product-price="{{ product.display_price|cut:',' }}"
+                data-product-image="{{ product.primary_image_url|default:''|escape }}"
+                aria-label="Thêm vào giỏ hàng"
+            >
+                <i class="bi bi-cart-plus"></i>
+            </button>
+        </div>
+    </div>
+</article>
