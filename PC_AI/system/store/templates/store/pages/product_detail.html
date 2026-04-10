@@ -155,6 +155,7 @@
                                     data-product-id="{{ product.id }}"
                                     data-product-name="{{ product.name|escape }}"
                                     data-product-brand="{{ product.brand|default:'N/A'|escape }}"
+                                    data-product-category="{{ product.category|default:'Khác'|escape }}"
                                     data-product-price="{{ product.price|cut:',' }}"
                                     data-product-image="{{ product.primary_image|default:''|escape }}"
                                 >
@@ -167,6 +168,7 @@
                                     data-product-id="{{ product.id }}"
                                     data-product-name="{{ product.name|escape }}"
                                     data-product-brand="{{ product.brand|default:'N/A'|escape }}"
+                                    data-product-category="{{ product.category|default:'Khác'|escape }}"
                                     data-product-price="{{ product.price|cut:',' }}"
                                     data-product-image="{{ product.primary_image|default:''|escape }}"
                                 >
@@ -210,6 +212,21 @@
                     </div>
                 </section> {% endcomment %}
             </section>
+
+            {% if recommended_products %}
+            <section class="cart-recommend mt-4" data-session-recommendations data-session-limit="6">
+                <div class="products-toolbar">
+                    <h2 class="products-title">GỢI Ý CHO BẠN</h2>
+                </div>
+                <div class="products-grid" data-session-rec-grid>
+                    {% for product in recommended_products %}
+                        <div class="d-flex">
+                            {% include 'store/components/product_card.html' with product=product %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
         </div>
     </main>
 
@@ -485,7 +502,7 @@
                         },
                         body: JSON.stringify({
                             product_id: productPayload.id,
-                            action: "buy_now"
+                            action: "add_to_cart"
                         })
                     }).catch(() => {
                         // Ignore tracking failure to avoid affecting purchase action.

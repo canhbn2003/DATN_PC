@@ -1,0 +1,32 @@
+/* Cache-busting admin sidebar override */
+
+.main-sidebar,
+.main-sidebar .sidebar,
+.main-sidebar .sidebar-wrapper,
+.sidebar-dark-primary,
+.sidebar-dark-primary .sidebar,
+.sidebar-dark-primary .sidebar-wrapper {
+    background: #343a40 !important;
+    background-color: #343a40 !important;
+    background-image: none !important;
+}
+
+.main-sidebar .brand-link,
+.main-sidebar .nav-link,
+.main-sidebar .nav-link p,
+.main-sidebar .nav-link i,
+.main-sidebar .nav-link .nav-icon,
+.main-sidebar .nav-link .right,
+.main-sidebar .nav-header,
+.main-sidebar .brand-text,
+.main-sidebar .user-panel,
+.main-sidebar .user-panel a,
+.main-sidebar .nav-treeview .nav-link,
+.main-sidebar .nav-treeview .nav-link p {
+    color: #ffffff !important;
+    opacity: 1 !important;
+}
+
+.nav-sidebar .nav-item > .nav-link.active {
+    color: #ffffff !important;
+}

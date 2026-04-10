@@ -69,7 +69,7 @@
                     <h2>Doanh thu 7 ngày</h2>
                     <p>Biểu đồ tăng trưởng đơn hàng và doanh thu gần nhất.</p>
                 </div>
-                <span class="ltc-panel-badge">Chart.js</span>
+                {% comment %} <span class="ltc-panel-badge">Chart.js</span> {% endcomment %}
             </div>
             <div class="ltc-chart-wrap">
                 <canvas id="revenueChart"></canvas>
@@ -195,6 +195,12 @@
 <script>
     (function () {
         const getJson = (id) => JSON.parse(document.getElementById(id).textContent || "[]");
+        const chartFontFamily = '"Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif';
+
+        if (window.Chart) {
+            Chart.defaults.font.family = chartFontFamily;
+            Chart.defaults.color = "#334155";
+        }
 
         const labels = getJson("ltc-daily-labels");
         const revenue = getJson("ltc-daily-revenue");

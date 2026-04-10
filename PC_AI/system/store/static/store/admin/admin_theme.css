@@ -1,13 +1,31 @@
 /* LTC admin visual polish for Jazzmin */
 
+@import url("https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700;800&display=swap");
+
 :root {
     --ltc-primary: #0f4c81;
     --ltc-primary-2: #1b9aaa;
     --ltc-surface: #f4f7fb;
     --ltc-card: #ffffff;
     --ltc-text: #152238;
+    --ltc-text-strong: #0e1a2b;
     --ltc-muted: #637083;
     --ltc-border: #d9e2ec;
+    --ltc-link: #1849a7;
+    --ltc-link-hover: #103d8d;
+}
+
+html,
+body,
+button,
+input,
+select,
+textarea,
+.main-header,
+.main-sidebar,
+.content-wrapper,
+.main-footer {
+    font-family: "Be Vietnam Pro", "Segoe UI", Tahoma, sans-serif !important;
 }
 
 body,
@@ -15,6 +33,60 @@ body,
 .main-footer {
     background: linear-gradient(160deg, #f9fbff 0%, #f3f7fc 60%, #eef4fb 100%);
     color: var(--ltc-text);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.content-header h1,
+.content-header .m-0,
+.card-title,
+.module h2,
+.module caption,
+label,
+th,
+strong {
+    color: var(--ltc-text-strong);
+}
+
+p,
+td,
+li,
+span,
+.form-control,
+input,
+select,
+textarea,
+.select2-container--default .select2-selection--single .select2-selection__rendered,
+.select2-container--default .select2-selection--multiple .select2-selection__rendered {
+    color: var(--ltc-text);
+}
+
+small,
+.help,
+.helptext,
+.form-text,
+.text-muted,
+.breadcrumb-item,
+.text-secondary {
+    color: var(--ltc-muted) !important;
+}
+
+.content-wrapper a,
+.card a,
+.module a,
+.breadcrumb a {
+    color: var(--ltc-link);
+}
+
+.content-wrapper a:hover,
+.card a:hover,
+.module a:hover,
+.breadcrumb a:hover {
+    color: var(--ltc-link-hover);
 }
 
 .main-header {
@@ -32,6 +104,36 @@ body,
     background: linear-gradient(180deg, #12355b 0%, #0f2d4c 100%) !important;
 }
 
+.main-sidebar .brand-link,
+.main-sidebar .nav-link,
+.main-sidebar .nav-header,
+.main-sidebar .user-panel,
+.main-sidebar .user-panel a,
+.main-sidebar .brand-text {
+    color: #ffffff !important;
+}
+
+.main-sidebar .nav-link p,
+.main-sidebar .nav-link i,
+.main-sidebar .nav-link .nav-icon,
+.main-sidebar .nav-link .right,
+.main-sidebar .nav-treeview .nav-link,
+.main-sidebar .nav-treeview .nav-link p,
+.main-sidebar .nav-header,
+.main-sidebar .brand-text,
+.main-sidebar .user-panel a {
+    color: #ffffff !important;
+    opacity: 1 !important;
+}
+
+.main-sidebar .nav-treeview .nav-link {
+    color: #ffffff !important;
+}
+
+.main-sidebar .nav-link:hover {
+    color: #ffffff !important;
+}
+
 .nav-sidebar .nav-item > .nav-link {
     border-radius: 10px;
     margin: 3px 8px;
@@ -41,6 +143,7 @@ body,
 .nav-sidebar .nav-item > .nav-link.active {
     background: linear-gradient(90deg, var(--ltc-primary) 0%, var(--ltc-primary-2) 100%) !important;
     box-shadow: 0 6px 18px rgba(27, 154, 170, 0.35);
+    color: #ffffff !important;
 }
 
 .content-header h1,
@@ -81,6 +184,7 @@ body,
 .table td,
 #result_list td {
     vertical-align: middle;
+    color: var(--ltc-text);
 }
 
 .btn-primary,

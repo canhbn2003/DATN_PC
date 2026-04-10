@@ -230,7 +230,6 @@ class OrderItem(models.Model):
 class UserBehavior(models.Model):
     ACTION_CHOICES = [
         ('view', 'Xem'),
-        ('click', 'Nhấn vào'),
         ('add_to_cart', 'Thêm vào giỏ'),
         ('purchase', 'Mua hàng'),
     ]
@@ -375,6 +374,7 @@ class Promotion(models.Model):
     start_date = models.DateTimeField()
     end_date = models.DateTimeField()
     usage_limit = models.IntegerField()
+    usage_limit_per_user = models.IntegerField(null=True, blank=True)
     used_count = models.IntegerField(default=0)
     status = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -406,3 +406,108 @@ class PromotionProduct(models.Model):
         db_table = "promotion_products"
         verbose_name = "Sản phẩm áp dụng mã giảm giá"
         verbose_name_plural = "Sản phẩm áp dụng mã giảm giá"
+
+
+class UserPromotion(models.Model):
+    id_user_promotions = models.AutoField(primary_key=True)
+
+    id_users = models.ForeignKey(
+        User,
+        models.CASCADE,
+        db_column="id_users"
+    )
+
+    id_promotions = models.ForeignKey(
+        Promotion,
+        models.CASCADE,
+        db_column="id_promotions"
+    )
+
+    is_saved = models.BooleanField(default=False)
+    used_count = models.IntegerField(default=0)
+    saved_at = models.DateTimeField(null=True, blank=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = "user_promotions"
+        verbose_name = "Mã giảm giá của người dùng"
+        verbose_name_plural = "Mã giảm giá của người dùng"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["id_users", "id_promotions"],
+                name="UQ_user_promotion",
+            )
+        ]
+
+
+class UserItemScore(models.Model):
+    id_users = models.ForeignKey(
+        User,
+        models.DO_NOTHING,
+        db_column="id_users"
+    )
+
+    id_products = models.ForeignKey(
+        Product,
+        models.DO_NOTHING,
+        db_column="id_products"
+    )
+
+    score = models.FloatField()
+
+    class Meta:
+        managed = False
+        db_table = "user_item_scores"
+        verbose_name = "Điểm user-sản phẩm"
+        verbose_name_plural = "Điểm user-sản phẩm"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["id_users", "id_products"],
+                name="pk_user_item_scores",
+            )
+        ]
+
+
+class ItemSimilarity(models.Model):
+    product_1 = models.ForeignKey(
+        Product,
+        models.DO_NOTHING,
+        db_column="product_1",
+        related_name="item_similarity_source",
+    )
+    product_2 = models.ForeignKey(
+        Product,
+        models.DO_NOTHING,
+        db_column="product_2",
+        related_name="item_similarity_target",
+    )
+    similarity = models.FloatField()
+
+    class Meta:
+        managed = False
+        db_table = "item_similarity"
+        verbose_name = "Độ tương đồng sản phẩm"
+        verbose_name_plural = "Độ tương đồng sản phẩm"
+
+
+class UserSimilarity(models.Model):
+    user_1 = models.ForeignKey(
+        User,
+        models.DO_NOTHING,
+        db_column="user_1",
+        related_name="user_similarity_source",
+    )
+    user_2 = models.ForeignKey(
+        User,
+        models.DO_NOTHING,
+        db_column="user_2",
+        related_name="user_similarity_target",
+    )
+    similarity = models.FloatField()
+
+    class Meta:
+        managed = False
+        db_table = "user_similarity"
+        verbose_name = "Độ tương đồng người dùng"
+        verbose_name_plural = "Độ tương đồng người dùng"

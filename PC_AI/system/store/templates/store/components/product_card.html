@@ -35,6 +35,7 @@
                 data-product-id="{{ product.id_products }}"
                 data-product-name="{{ product.name_products|escape }}"
                 data-product-brand="{{ product.brand|default:'N/A'|escape }}"
+                data-product-category="{{ product.id_categories.name_categories|default:'Khác'|escape }}"
                 data-product-price="{{ product.display_price|cut:',' }}"
                 data-product-image="{{ product.primary_image_url|default:''|escape }}"
                 aria-label="Thêm vào giỏ hàng"

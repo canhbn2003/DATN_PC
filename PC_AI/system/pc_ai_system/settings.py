@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -25,7 +26,7 @@ SECRET_KEY = 'django-insecure-41cpywa%hjv4w3*omei2j_fg02a6hnjj$o9(r&iu&6=gtpdj+)
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -81,7 +82,7 @@ WSGI_APPLICATION = 'pc_ai_system.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'mssql',
-        'NAME': 'pc_store_2',
+        'NAME': 'pc_store_1',
         'HOST': 'Admin-PC\SQLEXPRESS',
         'PORT': '',
         'OPTIONS': {
@@ -135,10 +136,10 @@ STATICFILES_DIRS = [
 JAZZMIN_SETTINGS = {
     "site_title": "LTC Computer",
     "site_header": "LTC Computer",
-    "site_brand": "QUAN TRI",
+    "site_brand": ".",
     "site_url": "/",
-    "site_logo": "1.png",
-    "login_logo": "1.png",
+    "site_logo": "logo.png",
+    "login_logo": "logo.png",
     "site_logo_classes": "img-circle elevation-2",
     "welcome_sign": "Chào mừng đến với LTC Computer",
     "copyright": "LTC Computer",
@@ -159,6 +160,11 @@ JAZZMIN_SETTINGS = {
         "store.ProductDetail": "fas fa-list-alt",
         "store.Cart": "fas fa-shopping-cart",
         "store.CartItem": "fas fa-cart-plus",
+        "store.Discount": "fas fa-tags",
+        "store.DiscountCategory": "fas fa-object-group",
+        "store.DiscountProduct": "fas fa-box-open",
+        "store.Promotion": "fas fa-ticket-alt",
+        "store.PromotionProduct": "fas fa-gift",
         "store.Order": "fas fa-file-invoice",
         "store.OrderItem": "fas fa-receipt",
         "store.UserBehavior": "fas fa-chart-line",
@@ -166,18 +172,23 @@ JAZZMIN_SETTINGS = {
     },
     "order_with_respect_to": [
         "store.Category",
-        "store.Product",
         "store.User",
+        "store.Product",
         "store.Order",
+        "store.Promotion",
+        "store.Discount",
+        "store.PromotionProduct",
+        "store.DiscountCategory",
+        "store.DiscountProduct",
         "store.ProductDetail",
         "store.Cart",
-        "store.UserBehavior",
         "store.SearchHistory",
+        "store.UserBehavior",
     ],
     "show_ui_builder": False,
     "changeform_format": "horizontal_tabs",
     "related_modal_active": True,
-    "custom_css": "store/admin/admin_theme.css",
+    "custom_css": "store/admin/admin_theme_white.css",
     "custom_js": "store/admin/admin_theme.js",
 }
 
@@ -199,6 +210,12 @@ JAZZMIN_UI_TWEAKS = {
 }
 
 # MEDIA FILES CONFIGURATION
-import os
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'product_image')
+
+
+# VNPAY SANDBOX CONFIGURATION
+VNPAY_TMN_CODE = os.environ.get('VNPAY_TMN_CODE', 'K8117APR')
+VNPAY_HASH_SECRET = os.environ.get('VNPAY_HASH_SECRET', 'MDCOTJ8JNE3TN4YN3PWL6BYB1TN69WUJ')
+VNPAY_PAYMENT_URL = os.environ.get('VNPAY_PAYMENT_URL', 'https://sandbox.vnpayment.vn/paymentv2/vpcpay.html')
+VNPAY_RETURN_URL = os.environ.get('VNPAY_RETURN_URL', 'http://127.0.0.1:8000/api/payment/vnpay-return/')

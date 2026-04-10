@@ -17,7 +17,15 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from django.views.generic.base import RedirectView
-from store.views import cart_page, checkout, flash_sale_page, home_page, product_detail_page, viewed_products_page
+from store.views import (
+    cart_page,
+    checkout,
+    flash_sale_page,
+    home_page,
+    product_detail_page,
+    purchased_products_page,
+    viewed_products_page,
+)
 
 from django.conf import settings
 from django.conf.urls.static import static
@@ -29,6 +37,7 @@ urlpatterns = [
     path('checkout/', checkout, name='checkout_page'),
     path('flash-sale/', flash_sale_page, name='flash_sale_page'),
     path('viewed-products/', viewed_products_page, name='viewed_products_page'),
+    path('purchased-products/', purchased_products_page, name='purchased_products_page'),
     path(
         'admin/store/cartitem/',
         RedirectView.as_view(url='/admin/store/cart/', permanent=False),

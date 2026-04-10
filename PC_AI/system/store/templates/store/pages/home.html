@@ -18,19 +18,19 @@
     {% include 'store/partials/_site_header.html' %}
 
     {% if not selected_category_id and not is_search_result %}
-    <section class="banner-section">
+    <section class="banner-section home-surface home-surface-gray">
         <div class="container">
             <div class="banner-grid-wrap">
                 <!-- Banner chính bên trái -->
                 <div class="banner-main-carousel" data-banner-carousel>
                     <div class="carousel-item active" data-slide="0">
-                        <img src="{% static 'store/images/baner1.jpg' %}" alt="Banner 1" />
+                        <img src="{% static 'store/images/baner1.jpg' %}" alt="Banner 1" loading="eager" fetchpriority="high" decoding="async" />
                     </div>
                     <div class="carousel-item" data-slide="1">
-                        <img src="{% static 'store/images/baner8.jpg' %}" alt="Banner 2" />
+                        <img src="{% static 'store/images/baner8.jpg' %}" alt="Banner 2" loading="lazy" decoding="async" />
                     </div>
                     <div class="carousel-item" data-slide="2">
-                        <img src="{% static 'store/images/baner5.jpg' %}" alt="Banner 3" />
+                        <img src="{% static 'store/images/baner5.jpg' %}" alt="Banner 3" loading="lazy" decoding="async" />
                     </div>
 
                     <button type="button" class="carousel-control carousel-prev" data-carousel-control="prev">
@@ -50,10 +50,10 @@
                 <!-- 2 banner phụ bên phải -->
                 <div class="banner-side-stack">
                     <a href="#" class="banner-side-item">
-                        <img src="{% static 'store/images/baner4.jpg' %}" alt="Banner 4" />
+                        <img src="{% static 'store/images/baner4.jpg' %}" alt="Banner 4" loading="lazy" decoding="async" />
                     </a>
                     <a href="#" class="banner-side-item">
-                        <img src="{% static 'store/images/baner3fix.png' %}" alt="Banner 5" />
+                        <img src="{% static 'store/images/baner3fix.png' %}" alt="Banner 5" loading="lazy" decoding="async" />
                     </a>
                 </div>
             </div>
@@ -63,13 +63,13 @@
         <div class="container">
             <div class="banner-bottom-row">
                 <a href="#" class="banner-bottom-item">
-                    <img src="{% static 'store/images/baner6.jpg' %}" alt="Banner 6" />
+                    <img src="{% static 'store/images/baner6.jpg' %}" alt="Banner 6" loading="lazy" decoding="async" />
                 </a>
                 <a href="#" class="banner-bottom-item">
-                    <img src="{% static 'store/images/baner7.jpg' %}" alt="Banner 7" />
+                    <img src="{% static 'store/images/baner7.jpg' %}" alt="Banner 7" loading="lazy" decoding="async" />
                 </a>
                 <a href="#" class="banner-bottom-item">
-                    <img src="{% static 'store/images/baner2.jpg' %}" alt="Banner 2" />
+                    <img src="{% static 'store/images/baner2.jpg' %}" alt="Banner 2" loading="lazy" decoding="async" />
                 </a>
             </div>
         </div>
@@ -78,57 +78,99 @@
     
     <!-- Hot Sale Section -->
     {% if hot_sale_products and not has_product_filters %}
-    <section class="hot-sale-section">
+    <section class="home-surface home-surface-white">
         <div class="container">
-            <div class="hot-sale-header">
-                <h2 class="hot-sale-title">
-                    <i class="bi bi-fire"></i>
-                    HOT SALE CUỐI TUẦN
-                </h2>
-            </div>
+            <div class="hot-sale-section">
+                <div class="hot-sale-shell">
+                    <div class="hot-sale-header">
+                        <h2 class="hot-sale-title">
+                            <i class="bi bi-fire"></i>
+                            HOT SALE CUỐI TUẦN
+                        </h2>
+                    </div>
 
-            <div class="hot-sale-carousel-wrap">
-                <button class="hot-sale-nav hot-sale-nav-prev" data-carousel="prev">
-                    <i class="bi bi-chevron-left"></i>
-                </button>
+                    <div class="hot-sale-carousel-wrap">
+                        <button class="hot-sale-nav hot-sale-nav-prev" data-carousel="prev">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
 
-                <div class="hot-sale-carousel">
-                    <div class="hot-sale-track" data-hot-sale-track>
-                        {% for product in hot_sale_products %}
-                            <div class="hot-sale-item d-flex">
-                                {% include 'store/components/product_card.html' with product=product %}
+                        <div class="hot-sale-carousel">
+                            <div class="hot-sale-track" data-hot-sale-track>
+                                {% for product in hot_sale_products %}
+                                    <div class="hot-sale-item d-flex">
+                                        {% include 'store/components/product_card.html' with product=product %}
+                                    </div>
+                                {% endfor %}
                             </div>
-                        {% endfor %}
+                        </div>
+
+                        <button class="hot-sale-nav hot-sale-nav-next" data-carousel="next">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
                     </div>
                 </div>
-
-                <button class="hot-sale-nav hot-sale-nav-next" data-carousel="next">
-                    <i class="bi bi-chevron-right"></i>
-                </button>
             </div>
         </div>
     </section>
     {% endif %}
+
+    {% if recommended_products and not has_product_filters %}
+    <section class="catalog-main pb-1 home-surface home-surface-gray" data-session-recommendations data-session-limit="12">
+        <div class="container">
+            <section class="product-section">
+                <div class="products-toolbar">
+                    <h2 class="products-title" style="text-align: center;">GỢI Ý CHO BẠN</h2>
+                </div>
+
+                <div class="products-grid" data-session-rec-grid>
+                    {% for product in recommended_products %}
+                        <div class="d-flex">
+                            {% include 'store/components/product_card.html' with product=product %}
+                        </div>
+                    {% endfor %}
+                </div>
+            </section>
+        </div>
+    </section>
+    {% endif %}
     
-    <main class="catalog-main py-4">
+    <main class="catalog-main py-4 home-surface home-surface-white">
         <div class="container">
             <section id="products" class="product-section">
                 <div class="products-toolbar">
                     {% if selected_category_id %}
-                        <h2 class="products-title">
-                            Sản phẩm: {{ selected_category_name }}
-                            {% if selected_price_range %}
-                                {% if selected_price_range == 'lt5' %}
-                                    (Dưới 5 triệu)
-                                {% elif selected_price_range == 'lt15' %}
-                                    (Dưới 15 triệu)
-                                {% elif selected_price_range == '15-20' %}
-                                    (Từ 15 đến 20 triệu)
-                                {% elif selected_price_range == 'gt20' %}
-                                    (Trên 20 triệu)
-                                {% endif %}
-                            {% endif %}
-                        </h2>
+                        <div class="quick-category-nav-wrap" style="padding:0; border-top:0; flex:1; min-width:0;">
+                            <nav class="quick-category-nav" aria-label="Chuyển nhanh danh mục">
+                                {% for category in categories %}
+                                    <a
+                                        href="/?category={{ category.id_categories }}"
+                                        class="quick-category-link{% if selected_category_id == category.id_categories|stringformat:'s' %} is-active{% endif %}"
+                                    >
+                                        {% if forloop.counter == 1 %}
+                                            <i class="bi bi-laptop"></i>
+                                        {% elif forloop.counter == 2 %}
+                                            <i class="bi bi-pc-display"></i>
+                                        {% elif forloop.counter == 3 %}
+                                            <i class="bi bi-display"></i>
+                                        {% elif forloop.counter == 4 %}
+                                            <i class="bi bi-cpu"></i>
+                                        {% elif forloop.counter == 5 %}
+                                            <i class="bi bi-gpu-card"></i>
+                                        {% elif forloop.counter == 6 %}
+                                            <i class="bi bi-memory"></i>
+                                        {% elif forloop.counter == 7 %}
+                                            <i class="bi bi-device-hdd"></i>
+                                        {% elif forloop.counter == 8 %}
+                                            <i class="bi bi-mouse"></i>
+                                        {% else %}
+                                            <i class="bi bi-grid-3x3-gap"></i>
+                                        {% endif %}
+                                        <span>{{ category.name_categories }}</span>
+                                    </a>
+                                {% endfor %}
+                            </nav>
+                        </div>
+
                         <form method="get" class="d-flex align-items-center gap-2" style="flex-wrap:wrap;">
                             <input type="hidden" name="category" value="{{ selected_category_id }}" />
                             <select name="brand" class="form-select form-select-sm" style="width:auto;">
@@ -163,7 +205,7 @@
                         </div>
                     {% empty %}
                         <div style="grid-column: 1 / -1;">
-                            <div class="alert alert-warning mb-0">Không có sản phẩm trong database.</div>
+                            <div class="alert alert-warning mb-0">Không có sản phẩm phù hợp.</div>
                         </div>
                     {% endfor %}
                 </div>

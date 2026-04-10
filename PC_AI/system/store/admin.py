@@ -180,28 +180,6 @@ class DiscountProductInline(VietnameseInlineMixin, admin.TabularInline):
 	verbose_name_plural = "Sản phẩm áp dụng"
 
 
-# @admin.register(DiscountCategory)
-# class DiscountCategoryAdmin(admin.ModelAdmin):
-# 	list_display = ("id", "id_discounts", "id_categories")
-# 	search_fields = ("id_discounts__name", "id_categories__name_categories")
-# 	list_filter = ("id_discounts", "id_categories")
-# 	ordering = ("id",)
-# 	list_display_links = ("id",)
-# 	verbose_name = "Danh mục áp dụng chiết khấu"
-# 	verbose_name_plural = "Danh mục áp dụng chiết khấu"
-
-
-# @admin.register(DiscountProduct)
-# class DiscountProductAdmin(admin.ModelAdmin):
-# 	list_display = ("id", "id_discounts", "id_products")
-# 	search_fields = ("id_discounts__name", "id_products__name_products")
-# 	list_filter = ("id_discounts", "id_products")
-# 	ordering = ("id",)
-# 	list_display_links = ("id",)
-# 	verbose_name = "Sản phẩm áp dụng chiết khấu"
-# 	verbose_name_plural = "Sản phẩm áp dụng chiết khấu"
-
-
 class PromotionProductInline(VietnameseInlineMixin, admin.TabularInline):
 	"""Inline để quản lý các sản phẩm áp dụng mã giảm giá"""
 	model = PromotionProduct
@@ -475,6 +453,7 @@ class PromotionAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		"start_date",
 		"end_date",
 		"usage_limit",
+		"usage_limit_per_user",
 		"used_count",
 		"status",
 	)
@@ -500,6 +479,7 @@ class PromotionAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		"start_date": "Ngày bắt đầu",
 		"end_date": "Ngày kết thúc",
 		"usage_limit": "Giới hạn lượt dùng",
+		"usage_limit_per_user": "Giới hạn mỗi tài khoản",
 		"used_count": "Đã sử dụng",
 		"status": "Trạng thái",
 	}
@@ -535,18 +515,6 @@ class PromotionAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		return format_vi_date(obj.end_date)
 
 
-# @admin.register(PromotionProduct)
-# class PromotionProductAdmin(admin.ModelAdmin):
-# 	list_display = ("id", "id_promotions", "id_products")
-# 	search_fields = ("id_promotions__code", "id_products__name_products")
-# 	list_filter = ("id_promotions", "id_products")
-# 	ordering = ("id",)
-# 	list_display_links = ("id",)
-# 	verbose_name = "Sản phẩm áp dụng mã giảm giá"
-# 	verbose_name_plural = "Sản phẩm áp dụng mã giảm giá"
-
-
-@admin.register(Cart)
 class CartAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 	class CartItemInline(VietnameseInlineMixin, admin.TabularInline):
 		model = CartItem

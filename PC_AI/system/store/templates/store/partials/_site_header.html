@@ -1,5 +1,10 @@
 {% load static %}
-<header class="shop-header" data-user-authenticated="{% if logged_in_user_name %}1{% else %}0{% endif %}">
+<header
+    class="shop-header"
+    data-user-authenticated="{% if logged_in_user_id %}1{% else %}0{% endif %}"
+    data-user-id="{{ logged_in_user_id|default:'' }}"
+    data-clear-cart-client="{% if clear_cart_client %}1{% else %}0{% endif %}"
+>
     <div class="header-topbar">
         <div class="container ticker-shell">
             <div class="ticker-track">
@@ -13,24 +18,18 @@
     <div class="main-header">
         <div class="container main-header-content">
             <a href="/" class="logo-wrap" aria-label="Trang chủ">
-                <img src="{% static '1.png' %}" alt="LTC Computer" />
+                <img src="{% static 'logo.png' %}" alt="LTC Computer" />
             </a>
 
             <div class="header-search">
                 <form class="search-form" role="search" action="/" method="get">
-                    <input type="search" name="q" placeholder="Tìm kiếm sản phẩm..." aria-label="Search" value="{{ search_query|default:'' }}" />
+                    <input type="search" name="q" placeholder="Tìm kiếm sản phẩm..." aria-label="Search" autocomplete="off" value="{{ search_query|default:'' }}" />
                     <button type="submit"><i class="bi bi-search"></i> Tìm kiếm</button>
                 </form>
+                <div class="search-autocomplete" data-search-autocomplete hidden></div>
             </div>
 
             <div class="header-tools">
-                <div class="tool-item tool-phones">
-                    <i class="bi bi-telephone"></i>
-                    <div>
-                        <small>088888888</small>
-                        <small>1900 0323</small>
-                    </div>
-                </div>
                 <a href="#" class="tool-item build-pc-btn">
                     <i class="bi bi-pc-display"></i>
                     <span>Build PC</span>
@@ -43,9 +42,9 @@
                         <i class="bi bi-chevron-down small"></i>
                     </button>
                     <div class="auth-user-dropdown" data-user-dropdown>
-                        <a href="/api/account/" class="auth-user-dropdown-item">Thông tin tài khoản</a>
-                        <a href="/api/orders/" class="auth-user-dropdown-item">Đơn hàng của tôi</a>
-                        <form method="post" action="/api/auth/logout/" class="auth-user-dropdown-form">
+                        <a href="/api/account/" class="auth-user-dropdown-item">Tài khoản</a>
+                        <a href="/api/orders/" class="auth-user-dropdown-item">Đơn hàng</a>
+                        <form method="post" action="/api/auth/logout/" class="auth-user-dropdown-form" data-logout-form>
                             {% csrf_token %}
                             <button type="submit" class="auth-user-dropdown-item auth-user-dropdown-logout">Đăng xuất</button>
                         </form>
@@ -119,11 +118,12 @@
             <div class="service-links">
                 <a href="{% url 'flash_sale_page' %}" data-nav-match="{% url 'flash_sale_page' %}"><i class="bi bi-lightning-charge-fill"></i> Mã giảm giá</a>
                 <a href="{% url 'viewed_products_page' %}" data-nav-match="{% url 'viewed_products_page' %}"><i class="bi bi-truck"></i> Sản phẩm đã xem</a>
-                <a href="#"><i class="bi bi-arrow-repeat"></i> Easy Returns</a>
-                <a href="#"><i class="bi bi-shield-check"></i> Genuine Warranty</a>
+                <a href="{% url 'purchased_products_page' %}" data-nav-match="{% url 'purchased_products_page' %}"><i class="bi bi-bag-check"></i> Sản phẩm đã mua</a>
+                
                 <a href="/admin/" data-nav-match="/admin/"><i class="bi bi-speedometer2"></i> Admin</a>
             </div>
         </div>
+
     </div>
 </header>
 
@@ -171,17 +171,228 @@
     const badges = document.querySelectorAll(".cart-badge");
     if (!badges.length) return;
 
+    const STORAGE_KEY_PREFIX = "pcai_cart_";
+    const LEGACY_STORAGE_KEY = "pcai_cart";
+    const USER_KEY_CACHE = "pcai_cart_last_user_key";
+
+    const sanitizeItem = (rawItem) => {
+        if (!rawItem || typeof rawItem !== "object") return null;
+
+        const id = Number.parseInt(rawItem.id, 10) || 0;
+        if (!id) return null;
+
+        return {
+            id,
+            name: String(rawItem.name || "Sản phẩm"),
+            brand: String(rawItem.brand || "N/A"),
+            image: String(rawItem.image || ""),
+            price: Number(rawItem.price) || 0,
+            quantity: Math.max(1, Math.floor(Number(rawItem.quantity) || 1))
+        };
+    };
+
+    const getCsrfToken = () => {
+        const inputToken = document.querySelector("[name='csrfmiddlewaretoken']")?.value || "";
+        if (inputToken) return inputToken;
+
+        const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+        return match ? decodeURIComponent(match[1]) : "";
+    };
+
+    const readStoredItems = (storageKey) => {
+        if (!storageKey) return [];
+
+        try {
+            const raw = localStorage.getItem(storageKey);
+            if (!raw) return [];
+
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return [];
+
+            return parsed.map(sanitizeItem).filter(Boolean);
+        } catch (error) {
+            return [];
+        }
+    };
+
+    const resolveStorageKey = () => {
+        const userId = Number.parseInt(header?.dataset.userId || "", 10);
+        if (Number.isFinite(userId) && userId > 0) {
+            const key = `${STORAGE_KEY_PREFIX}${userId}`;
+            try {
+                sessionStorage.setItem(USER_KEY_CACHE, key);
+            } catch (error) {
+                // Ignore sessionStorage write failures.
+            }
+            return key;
+        }
+
+        if (isAuthenticated) {
+            try {
+                const cachedKey = sessionStorage.getItem(USER_KEY_CACHE);
+                if (cachedKey && cachedKey.startsWith(STORAGE_KEY_PREFIX) && cachedKey !== `${STORAGE_KEY_PREFIX}guest`) {
+                    return cachedKey;
+                }
+            } catch (error) {
+                // Ignore sessionStorage read failures.
+            }
+        }
+
+        return `${STORAGE_KEY_PREFIX}guest`;
+    };
+
+    const migrateStoredCartIfNeeded = (activeKey) => {
+        if (!activeKey || activeKey === LEGACY_STORAGE_KEY) return;
+
+        const guestKey = `${STORAGE_KEY_PREFIX}guest`;
+
+        try {
+            const existingActive = localStorage.getItem(activeKey);
+            const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+            if (!existingActive && legacyRaw) {
+                localStorage.setItem(activeKey, legacyRaw);
+                localStorage.removeItem(LEGACY_STORAGE_KEY);
+            }
+
+            const guestRaw = localStorage.getItem(guestKey);
+            const activeRaw = localStorage.getItem(activeKey);
+            if (activeKey !== guestKey && guestRaw && !activeRaw) {
+                localStorage.setItem(activeKey, guestRaw);
+            }
+        } catch (error) {
+            // Ignore storage migration failures.
+        }
+    };
+
+    const header = document.querySelector(".shop-header");
+    const userIdFromHeader = Number.parseInt(header?.dataset.userId || "", 10);
+    const isAuthenticated = (Number.isFinite(userIdFromHeader) && userIdFromHeader > 0) || header?.dataset.userAuthenticated === "1";
+    const activeStorageKey = resolveStorageKey();
+    migrateStoredCartIfNeeded(activeStorageKey);
+
     let count = 0;
-    try {
-        const raw = localStorage.getItem("pcai_cart");
-        const items = raw ? JSON.parse(raw) : [];
-        count = Array.isArray(items) ? items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0) : 0;
-    } catch (error) {
-        count = 0;
+    if (isAuthenticated) {
+        try {
+            const items = readStoredItems(activeStorageKey);
+            count = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+        } catch (error) {
+            count = 0;
+        }
     }
 
     badges.forEach((badge) => {
         badge.textContent = String(count);
+        badge.style.display = count > 0 ? "inline-flex" : "none";
+    });
+})();
+
+(function () {
+    const searchForm = document.querySelector(".search-form");
+    if (!searchForm) return;
+
+    const searchInput = searchForm.querySelector("input[name='q']");
+    const autocompletePanel = document.querySelector("[data-search-autocomplete]");
+    if (!searchInput || !autocompletePanel) return;
+
+    let debounceTimer = null;
+    let latestQuery = "";
+
+    const escapeHtml = (value) => {
+        return String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    };
+
+    const hidePanel = () => {
+        autocompletePanel.setAttribute("hidden", "hidden");
+        autocompletePanel.innerHTML = "";
+    };
+
+    const renderItems = (items, query) => {
+        if (!items.length) {
+            autocompletePanel.innerHTML = "<div class='search-suggest-empty'>Không tìm thấy gợi ý phù hợp.</div>";
+            autocompletePanel.removeAttribute("hidden");
+            return;
+        }
+
+        const rows = items
+            .map((item) => {
+                const name = escapeHtml(item.name);
+                const brand = escapeHtml(item.brand);
+                const category = escapeHtml(item.category);
+                const image = escapeHtml(item.image);
+                const url = escapeHtml(item.url);
+                return `
+                    <a class="search-suggest-item" href="${url}">
+                        <div class="search-suggest-thumb-wrap">
+                            ${image ? `<img class="search-suggest-thumb" src="${image}" alt="${name}" loading="lazy" />` : `<div class="search-suggest-thumb search-suggest-thumb-fallback"></div>`}
+                        </div>
+                        <div class="search-suggest-content">
+                            <div class="search-suggest-name">${name}</div>
+                            <div class="search-suggest-meta">${brand}${brand && category ? " • " : ""}${category}</div>
+                        </div>
+                    </a>
+                `;
+            })
+            .join("");
+
+        const searchAllUrl = `/?q=${encodeURIComponent(query)}`;
+        autocompletePanel.innerHTML = `${rows}<a class="search-suggest-all" href="${searchAllUrl}">Xem tất cả kết quả cho "${escapeHtml(query)}"</a>`;
+        autocompletePanel.removeAttribute("hidden");
+    };
+
+    const fetchSuggestions = async (query) => {
+        try {
+            const response = await fetch(`/api/search/autocomplete/?q=${encodeURIComponent(query)}&limit=8`);
+            if (!response.ok) {
+                hidePanel();
+                return;
+            }
+
+            const payload = await response.json();
+            if (query !== latestQuery) return;
+
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            renderItems(items, query);
+        } catch (error) {
+            hidePanel();
+        }
+    };
+
+    searchInput.addEventListener("input", () => {
+        const query = (searchInput.value || "").trim();
+        latestQuery = query;
+
+        window.clearTimeout(debounceTimer);
+        if (query.length < 2) {
+            hidePanel();
+            return;
+        }
+
+        debounceTimer = window.setTimeout(() => {
+            fetchSuggestions(query);
+        }, 180);
+    });
+
+    searchInput.addEventListener("focus", () => {
+        const query = (searchInput.value || "").trim();
+        if (query.length >= 2 && autocompletePanel.innerHTML.trim()) {
+            autocompletePanel.removeAttribute("hidden");
+        }
+    });
+
+    document.addEventListener("click", (event) => {
+        if (searchForm.contains(event.target) || autocompletePanel.contains(event.target)) {
+            return;
+        }
+        hidePanel();
+    });
+
+    searchForm.addEventListener("submit", () => {
+        hidePanel();
     });
 })();
 </script>
