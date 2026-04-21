@@ -1,0 +1,486 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    {% now "U" as css_version %}
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Thanh toán - {{ website_name_display|default:'LTC Computer' }}</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css"
+    />
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'store/site.css' %}?v={{ css_version }}" />
+  </head>
+  <body class="page-checkout">
+    {% include 'store/partials/_site_header.html' %}
+
+    <div class="container-lg page-top-wrap">
+      <div class="page-top-actions">
+        <nav class="breadcrumb-trail" aria-label="breadcrumb">
+          <a href="/">Trang chủ</a>
+          <i class="bi bi-chevron-right"></i>
+          <a href="/cart/">Giỏ hàng</a>
+          <i class="bi bi-chevron-right"></i>
+          <span>Thanh toán</span>
+        </nav>
+        <a href="/cart/" class="top-action-btn top-action-btn--subtle">
+          <i class="bi bi-arrow-left"></i> Quay lại giỏ hàng
+        </a>
+      </div>
+    </div>
+
+    {% if messages %}
+    <div class="container-lg mt-3">
+      {% for message in messages %}
+      <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="container-lg checkout-shell">
+      <form method="POST" id="checkoutForm">
+        {% csrf_token %}
+        <div class="row g-4">
+          <div class="col-lg-7 checkout-col">
+            <div class="checkout-section">
+              <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                <h3 style="margin: 0;"><i class="bi bi-person"></i> Thông tin giao hàng</h3>
+                <button type="button" class="btn-edit" id="editBtn" onclick="toggleEditMode()">
+                  <i class="bi bi-pencil-square"></i> Sửa
+                </button>
+              </div>
+
+              <input type="hidden" name="selected_address_id" id="selectedAddressId" value="{{ selected_address_id|default:'' }}" />
+
+              {% if user_addresses %}
+              <div class="address-choice-list" style="margin-top: 14px;">
+                {% for addr in user_addresses %}
+                <label class="address-choice-item {% if selected_address_id and selected_address_id|stringformat:'s' == addr.id_user_addresses|stringformat:'s' %}active{% endif %}">
+                  <input
+                    type="radio"
+                    name="address_choice"
+                    value="{{ addr.id_user_addresses }}"
+                    data-address="{{ addr.full_address|escape }}"
+                    data-phone="{{ addr.phone_address|default:user.phone_users|default:''|escape }}"
+                    {% if selected_address_id and selected_address_id|stringformat:'s' == addr.id_user_addresses|stringformat:'s' %}checked{% endif %}
+                  />
+                  <div class="choice-main">
+                    <div class="choice-line1">
+                      <strong>{{ addr.address_name|default:"Khác" }}</strong>
+                      {% if addr.is_default %}<span class="choice-default">Mặc định</span>{% endif %}
+                    </div>
+                    <div class="choice-line2">{{ addr.full_address }}</div>
+                    <div class="choice-line3">{{ addr.phone_address|default:user.phone_users|default:"Chưa có số điện thoại" }}</div>
+                  </div>
+                </label>
+                {% endfor %}
+              </div>
+              {% endif %}
+
+              <div class="customer-info-view" id="viewMode" style="margin-top: 10px;">
+                <div class="info-item">
+                  <span class="info-label">Tên người nhận</span>
+                  <span class="info-value" id="displayName">{{ user.name_users }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Email</span>
+                  <span class="info-value" id="displayEmail">{{ user.email }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Số điện thoại</span>
+                  <span class="info-value" id="displayPhone">{{ selected_shipping_phone|default:user.phone_users }}</span>
+                </div>
+                <div class="info-item">
+                  <span class="info-label">Địa chỉ giao hàng</span>
+                  <span class="info-value" id="displayAddress">{{ selected_shipping_address|default:user.address_users }}</span>
+                </div>
+              </div>
+
+              <div class="customer-info-edit" id="editMode" style="margin-top: 10px;">
+                <input type="hidden" name="name" id="inputName" value="{{ user.name_users|default:'' }}" />
+                <input type="hidden" name="email" id="inputEmail" value="{{ user.email }}" />
+                <input type="hidden" name="phone" id="submitPhone" value="{{ selected_shipping_phone|default:user.phone_users|default:'' }}" />
+                <input type="hidden" name="address" id="submitAddress" value="{{ selected_shipping_address|default:user.address_users|default:'' }}" />
+
+                <div class="form-group-custom">
+                  <label>Tên người nhận (không thể sửa)</label>
+                  <input type="text" value="{{ user.name_users|default:'' }}" readonly style="background: #f8fafc; color: #64748b;" />
+                </div>
+                <div class="form-group-custom">
+                  <label>Email (không thể sửa)</label>
+                  <input type="email" value="{{ user.email }}" readonly style="background: #f8fafc; color: #64748b;" />
+                </div>
+
+                <div class="row-cols-form">
+                  <div class="form-group-custom">
+                    <label>Số điện thoại *</label>
+                    <input type="text" id="inputPhone" value="{{ selected_shipping_phone|default:user.phone_users|default:'' }}" />
+                  </div>
+                  <div class="form-group-custom">
+                    <label>Địa chỉ giao hàng *</label>
+                    <input type="text" id="inputAddress" value="{{ selected_shipping_address|default:user.address_users|default:'' }}" />
+                  </div>
+                </div>
+
+                <div class="edit-actions">
+                  <button type="button" class="btn-save" onclick="saveChanges()">
+                    <i class="bi bi-check-circle"></i> Lưu
+                  </button>
+                  <button type="button" class="btn-cancel" onclick="cancelEdit()">
+                    <i class="bi bi-x-circle"></i> Hủy
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="checkout-section">
+              <h3><i class="bi bi-chat-left-text"></i> Ghi chú (tùy chọn)</h3>
+              <div class="form-group-custom">
+                <textarea name="notes" placeholder="Ghi chú thêm cho nhân viên giao hàng?" rows="3"></textarea>
+              </div>
+            </div>
+
+            <div class="checkout-section">
+              <h3><i class="bi bi-credit-card"></i> Phương thức thanh toán</h3>
+              <label style="display:flex; align-items:center; cursor:pointer; padding:10px; border:1px solid #e5e7eb; border-radius:8px; margin-bottom:10px;">
+                <input type="radio" name="payment_method" value="cod" checked style="margin-right:10px;" />
+                <span style="font-weight:600; color:#1f2937;">Thanh toán khi nhận hàng (COD)</span>
+              </label>
+              {% comment %} <label style="display:flex; align-items:center; cursor:pointer; padding:10px; border:1px solid #e5e7eb; border-radius:8px; margin-bottom:10px;">
+                <input type="radio" name="payment_method" value="bank_transfer" style="margin-right:10px;" />
+                <span style="font-weight:600; color:#1f2937;">Chuyển khoản ngân hàng</span>
+              </label> {% endcomment %}
+              <label style="display:flex; align-items:center; cursor:pointer; padding:10px; border:1px solid #e5e7eb; border-radius:8px;">
+                <input type="radio" name="payment_method" value="wallet" style="margin-right:10px;" />
+                <span style="font-weight:600; color:#1f2937;">Ví điện tử</span>
+              </label>
+
+              <div class="security-note" style="margin-top: 12px;">
+                <i class="bi bi-shield-check"></i>
+                <span>Đơn hàng được bảo vệ với chính sách hoàn tiền 100%.</span>
+                
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-5">
+            <div class="checkout-col right-sticky">
+              <div class="checkout-section">
+                <h3><i class="bi bi-box-seam"></i> Tóm tắt đơn hàng</h3>
+
+                <table class="summary-table">
+                  <thead>
+                    <tr>
+                      <th>Sản phẩm</th>
+                      <th style="text-align:center;">SL</th>
+                      <th style="text-align:right;">Thành tiền</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in cart_items %}
+                    <tr>
+                      <td>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                          {% if item.product.image %}
+                          <img src="{{ item.product.image }}" alt="{{ item.product.name }}" class="cart-item-image" />
+                          {% else %}
+                          <div style="width:44px; height:44px; background:#f1f5f9; border-radius:6px; display:flex; align-items:center; justify-content:center;">
+                            <i class="bi bi-box" style="color:#94a3b8;"></i>
+                          </div>
+                          {% endif %}
+                          <span style="font-size:13px; color:#0f172a;">{{ item.product.name|truncatewords:4 }}</span>
+                        </div>
+                      </td>
+                      <td style="text-align:center;">{{ item.quantity }}</td>
+                      <td style="text-align:right;">
+                        {% if item.line_product_discount > 0 %}
+                        <div style="font-size:11px; color:#6b7280; text-decoration: line-through;">{{ item.display_original_subtotal }} đ</div>
+                        {% endif %}
+                        <strong style="color:#dc2626;">{{ item.display_subtotal }} đ</strong>
+                      </td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+
+                <div class="order-total-box">
+                  <div class="total-row">
+                    <span>Giá gốc:</span>
+                    <span>{{ display_subtotal_original }} đ</span>
+                  </div>
+                  <div class="total-row">
+                    <span>SALE: </span>
+                    <span style="color:#0f766e;">-{{ display_product_discount }} đ</span>
+                  </div>
+                  <div class="total-row">
+                    <span>Sau giảm sản phẩm:</span>
+                    <span>{{ display_subtotal_after_product_discount }} đ</span>
+                  </div>
+                  <div class="total-row">
+                    <span>Phí vận chuyển:</span>
+                    <span style="color:#c1122f;">Miễn phí</span>
+                  </div>
+                  <div class="total-row">
+                    <span>Mã giảm giá:</span>
+                    <span style="color:#0f766e;">-{{ display_promotion_discount }} đ</span>
+                  </div>
+                  <div class="total-row final">
+                    <span>Tổng cộng:</span>
+                    <span>{{ display_total }} đ</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="checkout-section" id="promo-section">
+                <h3><i class="bi bi-ticket-perforated"></i> Mã giảm giá</h3>
+                <div class="promo-inline" style="grid-template-columns: 1fr;">
+                  <input
+                    id="promotionCodeDisplay"
+                    type="text"
+                    value="{{ promotion_code|default:'' }}"
+                    placeholder="Chưa chọn mã giảm giá"
+                    readonly
+                  />
+                  <button type="button" class="btn-edit" id="openPromoModalBtn">
+                    <i class="bi bi-ticket-perforated"></i> Chọn mã giảm giá
+                  </button>
+                </div>
+                {% if promotion_message %}
+                <div class="promo-message" style="color: {% if promotion_applied %}#0f766e{% else %}#b91c1c{% endif %};">
+                  {{ promotion_message }}
+                </div>
+                {% endif %}
+                <div style="margin-top: 8px; font-size: 12px; color: #6b7280;">
+                  Bấm "Chọn mã giảm giá" để nhập tay hoặc chọn nhanh từ danh sách mã đã lưu.
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <div class="row mt-3">
+          <div class="col-12 d-flex justify-content-center">
+            <button type="submit" class="btn-checkout" style="min-width: 320px;">
+              <i class="bi bi-check-circle"></i> Xác nhận đặt hàng
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+
+    {% include 'store/partials/_site_footer.html' %}
+
+    <div id="promoModal" class="auth-modal-overlay" aria-hidden="true">
+      <div class="auth-modal" role="dialog" aria-modal="true" aria-label="Chọn mã giảm giá">
+        <button type="button" class="auth-close-btn" id="closePromoModal" aria-label="Đóng">&times;</button>
+        <h2>Chọn mã giảm giá</h2>
+
+        <div class="auth-form">
+          <label for="promotionCodeInput">Nhập mã giảm giá</label>
+          <input id="promotionCodeInput" type="text" value="{{ promotion_code|default:'' }}" placeholder="Ví dụ: SALE50" style="text-transform: uppercase;" />
+
+          <label for="savedPromoSelect">Mã đã lưu</label>
+          <select id="savedPromoSelect">
+            <option value="">-- Chọn mã đã lưu --</option>
+            {% for promo in saved_promotions %}
+            <option value="{{ promo.code }}">{{ promo.code }} - {{ promo.text }}</option>
+            {% endfor %}
+          </select>
+
+          <button type="button" class="auth-submit-btn" id="applyPromotionBtn">Áp dụng mã</button>
+
+          {% if not saved_promotions %}
+          <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+            Bạn chưa lưu mã nào. Vào Flash Sale để lưu mã.
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      const originalData = {
+        phone: "{{ selected_shipping_phone|default:user.phone_users|default:''|escapejs }}",
+        address: "{{ selected_shipping_address|default:user.address_users|default:''|escapejs }}",
+      };
+
+      function syncSelectionStyles() {
+        document.querySelectorAll(".address-choice-item").forEach(function (item) {
+          const radio = item.querySelector('input[type="radio"]');
+          item.classList.toggle("active", !!(radio && radio.checked));
+        });
+      }
+
+      function applySelectedAddress(addressId, phone, address) {
+        document.getElementById("selectedAddressId").value = addressId || "";
+        document.getElementById("displayPhone").textContent = phone || "";
+        document.getElementById("displayAddress").textContent = address || "";
+        document.getElementById("submitPhone").value = phone || "";
+        document.getElementById("submitAddress").value = address || "";
+        document.getElementById("inputPhone").value = phone || "";
+        document.getElementById("inputAddress").value = address || "";
+      }
+
+      function toggleEditMode() {
+        const viewMode = document.getElementById("viewMode");
+        const editMode = document.getElementById("editMode");
+        const editBtn = document.getElementById("editBtn");
+
+        if (viewMode.style.display === "none") {
+          viewMode.style.display = "block";
+          editMode.style.display = "none";
+          editBtn.style.display = "inline-block";
+        } else {
+          viewMode.style.display = "none";
+          editMode.style.display = "block";
+          editBtn.style.display = "none";
+        }
+      }
+
+      function saveChanges() {
+        const phone = document.getElementById("inputPhone").value.trim();
+        const address = document.getElementById("inputAddress").value.trim();
+
+        if (!phone || !address) {
+          alert("Vui lòng nhập đầy đủ thông tin");
+          return;
+        }
+
+        document.getElementById("displayPhone").textContent = phone;
+        document.getElementById("displayAddress").textContent = address;
+        document.getElementById("submitPhone").value = phone;
+        document.getElementById("submitAddress").value = address;
+        document.getElementById("selectedAddressId").value = "";
+        document.querySelectorAll('input[name="address_choice"]').forEach(function (radio) {
+          radio.checked = false;
+        });
+        syncSelectionStyles();
+
+        toggleEditMode();
+      }
+
+      function cancelEdit() {
+        document.getElementById("inputPhone").value = originalData.phone;
+        document.getElementById("inputAddress").value = originalData.address;
+
+        const viewMode = document.getElementById("viewMode");
+        const editMode = document.getElementById("editMode");
+        const editBtn = document.getElementById("editBtn");
+
+        viewMode.style.display = "block";
+        editMode.style.display = "none";
+        editBtn.style.display = "inline-block";
+      }
+
+      document.querySelectorAll('input[name="address_choice"]').forEach(function (radio) {
+        radio.addEventListener("change", function () {
+          if (!radio.checked) {
+            return;
+          }
+          applySelectedAddress(
+            radio.value,
+            (radio.dataset.phone || "").trim(),
+            (radio.dataset.address || "").trim()
+          );
+          syncSelectionStyles();
+        });
+      });
+      syncSelectionStyles();
+
+      document.getElementById("checkoutForm").addEventListener("submit", function (e) {
+        const submitter = e.submitter;
+        if (submitter && submitter.name === "apply_promotion") {
+          return;
+        }
+
+        const phone = document.getElementById("submitPhone").value.trim();
+        const address = document.getElementById("submitAddress").value.trim();
+
+        if (!phone || !address) {
+          e.preventDefault();
+          alert("Vui lòng nhập đầy đủ thông tin giao hàng");
+        }
+      });
+
+      function applyPromotionCode(code) {
+        const nextCode = (code || "").trim();
+        if (!nextCode) {
+          alert("Vui lòng nhập mã giảm giá");
+          return;
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.set("promo", nextCode);
+        url.hash = "promo-section";
+        window.location.assign(url.toString());
+      }
+
+      const applyPromotionBtn = document.getElementById("applyPromotionBtn");
+      const openPromoModalBtn = document.getElementById("openPromoModalBtn");
+      const closePromoModal = document.getElementById("closePromoModal");
+      const promoModal = document.getElementById("promoModal");
+      const promotionCodeDisplay = document.getElementById("promotionCodeDisplay");
+      const savedPromoSelect = document.getElementById("savedPromoSelect");
+
+      function openPromoModal() {
+        if (!promoModal) return;
+        promoModal.classList.add("open");
+        promoModal.setAttribute("aria-hidden", "false");
+      }
+
+      function hidePromoModal() {
+        if (!promoModal) return;
+        promoModal.classList.remove("open");
+        promoModal.setAttribute("aria-hidden", "true");
+      }
+
+      if (openPromoModalBtn) {
+        openPromoModalBtn.addEventListener("click", openPromoModal);
+      }
+
+      if (closePromoModal) {
+        closePromoModal.addEventListener("click", hidePromoModal);
+      }
+
+      if (promoModal) {
+        promoModal.addEventListener("click", function (event) {
+          if (event.target === promoModal) {
+            hidePromoModal();
+          }
+        });
+      }
+
+      if (savedPromoSelect) {
+        savedPromoSelect.addEventListener("change", function () {
+          const promotionInput = document.getElementById("promotionCodeInput");
+          if (promotionInput) {
+            promotionInput.value = savedPromoSelect.value || "";
+          }
+        });
+      }
+
+      if (applyPromotionBtn) {
+        applyPromotionBtn.addEventListener("click", function () {
+          const promotionInput = document.getElementById("promotionCodeInput");
+          const code = promotionInput ? promotionInput.value : "";
+          if (promotionCodeDisplay) {
+            promotionCodeDisplay.value = (code || "").trim();
+          }
+          hidePromoModal();
+          applyPromotionCode(code);
+        });
+      }
+    </script>
+  </body>
+</html>
+

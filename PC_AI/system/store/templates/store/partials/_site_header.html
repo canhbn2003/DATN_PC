@@ -1,0 +1,680 @@
+{% load static %}
+<header
+    class="shop-header"
+    data-user-authenticated="{% if logged_in_user_id %}1{% else %}0{% endif %}"
+    data-user-id="{{ logged_in_user_id|default:'' }}"
+    data-clear-cart-client="{% if clear_cart_client %}1{% else %}0{% endif %}"
+>
+    <div class="header-topbar">
+        <div class="container ticker-shell">
+            <div class="ticker-track">
+                <span>Khuyến mãi lớn tuần này - Freeship toàn quốc - Hỗ trợ trả góp 0% - Bảo hành chính hãng tại Showroom</span>
+                <span>Khuyến mãi lớn tuần này - Freeship toàn quốc - Hỗ trợ trả góp 0% - Bảo hành chính hãng tại Showroom</span>
+                <span>Khuyến mãi lớn tuần này - Freeship toàn quốc - Hỗ trợ trả góp 0% - Bảo hành chính hãng tại Showroom</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-header">
+        <div class="container main-header-content">
+            <a href="/" class="logo-wrap" aria-label="Trang chủ">
+                {% if website_logo_url %}
+                <img src="{{ website_logo_url }}" alt="{{ website_name_display }}" />
+                {% else %}
+                <img src="{% static 'logo1.png' %}" alt="{{ website_name_display }}" />
+                {% endif %}
+            </a>
+
+            <div class="header-search">
+                <form class="search-form" role="search" action="/" method="get">
+                    <input type="search" name="q" placeholder="Tìm kiếm sản phẩm..." aria-label="Search" autocomplete="off" value="{{ search_query|default:'' }}" />
+                    <button type="submit"><i class="bi bi-search"></i> Tìm kiếm</button>
+                </form>
+                <div class="search-autocomplete" data-search-autocomplete hidden></div>
+            </div>
+
+            <div class="header-tools">
+                <a href="#" class="tool-item build-pc-btn">
+                    <i class="bi bi-pc-display"></i>
+                    <span>Build PC</span>
+                </a>
+                {% if logged_in_user_name %}
+                <div class="auth-user-menu" data-user-menu>
+                    <button type="button" class="tool-item auth-user-trigger" data-user-trigger>
+                        <i class="bi bi-person"></i>
+                        <span>{{ logged_in_user_name }}</span>
+                        <i class="bi bi-chevron-down small"></i>
+                    </button>
+                    <div class="auth-user-dropdown" data-user-dropdown>
+                        <a href="/api/account/" class="auth-user-dropdown-item">Tài khoản</a>
+                        <a href="/api/orders/" class="auth-user-dropdown-item">Đơn hàng</a>
+                        <form method="post" action="/api/auth/logout/" class="auth-user-dropdown-form" data-logout-form>
+                            {% csrf_token %}
+                            <button type="submit" class="auth-user-dropdown-item auth-user-dropdown-logout">Đăng xuất</button>
+                        </form>
+                    </div>
+                </div>
+                {% else %}
+                <a href="/?auth=login" class="tool-item">
+                    <i class="bi bi-person"></i>
+                    <span>Đăng nhập</span>
+                </a>
+                {% endif %}
+                <a href="{% url 'cart_page' %}" class="tool-item cart-link">
+                    <i class="bi bi-cart3"></i>
+                    <span class="cart-badge">0</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="nav-header">
+        <div class="container nav-header-content">
+            <div class="category-menu-wrap" data-nav-catalog>
+                <button class="category-toggle" type="button"><i class="bi bi-list"></i> DANH MỤC SẢN PHẨM</button>
+                <div class="category-dropdown-menu">
+                    {% for category in categories %}
+                        <div class="category-item-wrap">
+                            <a href="/?category={{ category.id_categories }}" class="category-item">
+                                <span class="category-item-left">
+                                    {% if forloop.counter == 1 %}
+                                        <i class="bi bi-laptop"></i>
+                                    {% elif forloop.counter == 2 %}
+                                        <i class="bi bi-pc-display"></i>
+                                    {% elif forloop.counter == 3 %}
+                                        <i class="bi bi-display"></i>
+                                    {% elif forloop.counter == 4 %}
+                                        <i class="bi bi-keyboard"></i>
+                                    {% elif forloop.counter == 5 %}
+                                        <i class="bi bi-mouse"></i>
+                                    {% else %}
+                                        <i class="bi bi-grid-3x3-gap"></i>
+                                    {% endif %}
+                                    <span>{{ category.name_categories }}</span>
+                                </span>
+                                <i class="bi bi-chevron-right category-item-arrow"></i>
+                            </a>
+
+                            {% if category.brand_list %}
+                            <div class="category-submenu">
+                                <div class="submenu-col">
+                                    <div class="submenu-title">Thương hiệu</div>
+                                    {% for brand in category.brand_list %}
+                                        <a href="/?category={{ category.id_categories }}&brand={{ brand|urlencode }}" class="submenu-link">{{ brand }}</a>
+                                    {% endfor %}
+                                </div>
+                                <div class="submenu-col">
+                                    <div class="submenu-title">Giá bán</div>
+                                    <a href="/?category={{ category.id_categories }}&price_range=lt5" class="submenu-link">Dưới 5 triệu</a>
+                                    <a href="/?category={{ category.id_categories }}&price_range=lt15" class="submenu-link">Dưới 15 triệu</a>
+                                    <a href="/?category={{ category.id_categories }}&price_range=15-20" class="submenu-link">Từ 15 đến 20 triệu</a>
+                                    <a href="/?category={{ category.id_categories }}&price_range=gt20" class="submenu-link">Trên 20 triệu</a>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% empty %}
+                        <span>Chưa có danh mục</span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="service-links">
+                <a href="{% url 'flash_sale_page' %}" data-nav-match="{% url 'flash_sale_page' %}"><i class="bi bi-lightning-charge-fill"></i> Mã giảm giá</a>
+                <a href="{% url 'viewed_products_page' %}" data-nav-match="{% url 'viewed_products_page' %}"><i class="bi bi-truck"></i> Sản phẩm đã xem</a>
+                <a href="{% url 'purchased_products_page' %}" data-nav-match="{% url 'purchased_products_page' %}"><i class="bi bi-bag-check"></i> Sản phẩm đã mua</a>
+                {% if is_admin_user %}
+                <a href="/admin/" data-nav-match="/admin/" target="_blank" rel="noopener noreferrer"><i class="bi bi-speedometer2"></i> Admin</a>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+</header>
+
+
+
+<script>
+// --- PC AI Chatbox Patch: Suggest Config to Cart ---
+(function () {
+    const navCategoryWrap = document.querySelector("[data-nav-catalog]");
+    const navLinks = document.querySelectorAll(".service-links [data-nav-match]");
+    const buildPcButton = document.querySelector(".build-pc-btn");
+    const currentPath = window.location.pathname;
+    const searchParams = new URLSearchParams(window.location.search);
+
+    const isCatalogPage =
+        currentPath === "/"
+        || currentPath.startsWith("/products/")
+        || ["category", "brand", "price_range", "q"].some((key) => searchParams.get(key));
+
+    if (navCategoryWrap && isCatalogPage) {
+        navCategoryWrap.classList.add("is-active");
+    }
+
+    navLinks.forEach((link) => {
+        const matchPath = (link.dataset.navMatch || "").trim();
+        if (!matchPath) return;
+
+        const isActive = currentPath === matchPath || currentPath.startsWith(matchPath);
+        if (isActive) {
+            link.classList.add("is-active");
+        }
+    });
+
+    if (buildPcButton) {
+        buildPcButton.addEventListener("click", (event) => {
+            event.preventDefault();
+            if (window.pcAiChatbox && typeof window.pcAiChatbox.open === "function") {
+                window.pcAiChatbox.open();
+            }
+        });
+    }
+
+    const userMenus = document.querySelectorAll("[data-user-menu]");
+    userMenus.forEach((menu) => {
+        const trigger = menu.querySelector("[data-user-trigger]");
+        if (!trigger) return;
+
+        trigger.addEventListener("click", (event) => {
+            event.stopPropagation();
+            menu.classList.toggle("open");
+        });
+    });
+
+    document.addEventListener("click", () => {
+        userMenus.forEach((menu) => menu.classList.remove("open"));
+    });
+
+    const badges = document.querySelectorAll(".cart-badge");
+    if (!badges.length) return;
+
+    const STORAGE_KEY_PREFIX = "pcai_cart_";
+    const LEGACY_STORAGE_KEY = "pcai_cart";
+    const USER_KEY_CACHE = "pcai_cart_last_user_key";
+
+    const sanitizeItem = (rawItem) => {
+        if (!rawItem || typeof rawItem !== "object") return null;
+
+        const id = Number.parseInt(rawItem.id, 10) || 0;
+        if (!id) return null;
+
+        return {
+            id,
+            name: String(rawItem.name || "Sản phẩm"),
+            brand: String(rawItem.brand || "N/A"),
+            image: String(rawItem.image || ""),
+            price: Number(rawItem.price) || 0,
+            quantity: Math.max(1, Math.floor(Number(rawItem.quantity) || 1))
+        };
+    };
+
+    const getCsrfToken = () => {
+        const inputToken = document.querySelector("[name='csrfmiddlewaretoken']")?.value || "";
+        if (inputToken) return inputToken;
+
+        const match = document.cookie.match(/(?:^|; )csrftoken=([^;]+)/);
+        return match ? decodeURIComponent(match[1]) : "";
+    };
+
+    const readStoredItems = (storageKey) => {
+        if (!storageKey) return [];
+
+        try {
+            const raw = localStorage.getItem(storageKey);
+            if (!raw) return [];
+
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return [];
+
+            return parsed.map(sanitizeItem).filter(Boolean);
+        } catch (error) {
+            return [];
+        }
+    };
+
+    const resolveStorageKey = () => {
+        const userId = Number.parseInt(header?.dataset.userId || "", 10);
+        if (Number.isFinite(userId) && userId > 0) {
+            const key = `${STORAGE_KEY_PREFIX}${userId}`;
+            try {
+                sessionStorage.setItem(USER_KEY_CACHE, key);
+            } catch (error) {
+                // Ignore sessionStorage write failures.
+            }
+            return key;
+        }
+
+        if (isAuthenticated) {
+            try {
+                const cachedKey = sessionStorage.getItem(USER_KEY_CACHE);
+                if (cachedKey && cachedKey.startsWith(STORAGE_KEY_PREFIX) && cachedKey !== `${STORAGE_KEY_PREFIX}guest`) {
+                    return cachedKey;
+                }
+            } catch (error) {
+                // Ignore sessionStorage read failures.
+            }
+        }
+
+        return `${STORAGE_KEY_PREFIX}guest`;
+    };
+
+    const migrateStoredCartIfNeeded = (activeKey) => {
+        if (!activeKey || activeKey === LEGACY_STORAGE_KEY) return;
+
+        const guestKey = `${STORAGE_KEY_PREFIX}guest`;
+
+        try {
+            const existingActive = localStorage.getItem(activeKey);
+            const legacyRaw = localStorage.getItem(LEGACY_STORAGE_KEY);
+            if (!existingActive && legacyRaw) {
+                localStorage.setItem(activeKey, legacyRaw);
+                localStorage.removeItem(LEGACY_STORAGE_KEY);
+            }
+
+            const guestRaw = localStorage.getItem(guestKey);
+            const activeRaw = localStorage.getItem(activeKey);
+            if (activeKey !== guestKey && guestRaw && !activeRaw) {
+                localStorage.setItem(activeKey, guestRaw);
+            }
+        } catch (error) {
+            // Ignore storage migration failures.
+        }
+    };
+
+    const header = document.querySelector(".shop-header");
+    const userIdFromHeader = Number.parseInt(header?.dataset.userId || "", 10);
+    const isAuthenticated = (Number.isFinite(userIdFromHeader) && userIdFromHeader > 0) || header?.dataset.userAuthenticated === "1";
+    const activeStorageKey = resolveStorageKey();
+    migrateStoredCartIfNeeded(activeStorageKey);
+
+    let count = 0;
+    if (isAuthenticated) {
+        try {
+            const items = readStoredItems(activeStorageKey);
+            count = items.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+        } catch (error) {
+            count = 0;
+        }
+    }
+
+    badges.forEach((badge) => {
+        badge.textContent = String(count);
+        badge.style.display = count > 0 ? "inline-flex" : "none";
+    });
+})();
+
+(function () {
+    const searchForm = document.querySelector(".search-form");
+    if (!searchForm) return;
+
+    const searchInput = searchForm.querySelector("input[name='q']");
+    const autocompletePanel = document.querySelector("[data-search-autocomplete]");
+    if (!searchInput || !autocompletePanel) return;
+
+    let debounceTimer = null;
+    let latestQuery = "";
+
+    const escapeHtml = (value) => {
+        return String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    };
+
+    const hidePanel = () => {
+        autocompletePanel.setAttribute("hidden", "hidden");
+        autocompletePanel.innerHTML = "";
+    };
+
+    const renderItems = (items, query) => {
+        if (!items.length) {
+            autocompletePanel.innerHTML = "<div class='search-suggest-empty'>Không tìm thấy gợi ý phù hợp.</div>";
+            autocompletePanel.removeAttribute("hidden");
+            return;
+        }
+
+        const rows = items
+            .map((item) => {
+                const name = escapeHtml(item.name);
+                const brand = escapeHtml(item.brand);
+                const category = escapeHtml(item.category);
+                const image = escapeHtml(item.image);
+                const url = escapeHtml(item.url);
+                return `
+                    <a class="search-suggest-item" href="${url}">
+                        <div class="search-suggest-thumb-wrap">
+                            ${image ? `<img class="search-suggest-thumb" src="${image}" alt="${name}" loading="lazy" />` : `<div class="search-suggest-thumb search-suggest-thumb-fallback"></div>`}
+                        </div>
+                        <div class="search-suggest-content">
+                            <div class="search-suggest-name">${name}</div>
+                            <div class="search-suggest-meta">${brand}${brand && category ? " • " : ""}${category}</div>
+                        </div>
+                    </a>
+                `;
+            })
+            .join("");
+
+        const searchAllUrl = `/?q=${encodeURIComponent(query)}`;
+        autocompletePanel.innerHTML = `${rows}<a class="search-suggest-all" href="${searchAllUrl}">Xem tất cả kết quả cho "${escapeHtml(query)}"</a>`;
+        autocompletePanel.removeAttribute("hidden");
+    };
+
+    const fetchSuggestions = async (query) => {
+        try {
+            const response = await fetch(`/api/search/autocomplete/?q=${encodeURIComponent(query)}&limit=8`);
+            if (!response.ok) {
+                hidePanel();
+                return;
+            }
+
+            const payload = await response.json();
+            if (query !== latestQuery) return;
+
+            const items = Array.isArray(payload.items) ? payload.items : [];
+            renderItems(items, query);
+        } catch (error) {
+            hidePanel();
+        }
+    };
+
+    searchInput.addEventListener("input", () => {
+        const query = (searchInput.value || "").trim();
+        latestQuery = query;
+
+        window.clearTimeout(debounceTimer);
+        if (query.length < 2) {
+            hidePanel();
+            return;
+        }
+
+        debounceTimer = window.setTimeout(() => {
+            fetchSuggestions(query);
+        }, 180);
+    });
+
+    searchInput.addEventListener("focus", () => {
+        const query = (searchInput.value || "").trim();
+        if (query.length >= 2 && autocompletePanel.innerHTML.trim()) {
+            autocompletePanel.removeAttribute("hidden");
+        }
+    });
+
+    document.addEventListener("click", (event) => {
+        if (searchForm.contains(event.target) || autocompletePanel.contains(event.target)) {
+            return;
+        }
+        hidePanel();
+    });
+
+    searchForm.addEventListener("submit", () => {
+        hidePanel();
+    });
+})();
+
+(function () {
+    const chatRoot = document.querySelector("[data-pc-chatbox]");
+    if (!chatRoot) return;
+
+    const toggleButton = chatRoot.querySelector("[data-chat-toggle]");
+    const closeButton = chatRoot.querySelector("[data-chat-close]");
+    const clearButton = chatRoot.querySelector("[data-chat-clear]");
+    const panel = chatRoot.querySelector("[data-chat-panel]");
+    const messagesBox = chatRoot.querySelector("[data-chat-messages]");
+    const form = chatRoot.querySelector("[data-chat-form]");
+    const input = chatRoot.querySelector("[data-chat-input]");
+    const submitButton = chatRoot.querySelector("[data-chat-submit]");
+
+    if (!toggleButton || !closeButton || !clearButton || !panel || !messagesBox || !form || !input || !submitButton) return;
+
+    const CHAT_HISTORY_KEY = "pcai_data_chat_history_v1";
+    const HISTORY_LIMIT = 40;
+    const WELCOME_MESSAGE = "Xin chao, minh se tu van dua tren du lieu san pham hien co trong cua hang. Ban can tim gi?";
+
+    let isOpen = false;
+    let isSending = false;
+    let history = [];
+
+    const escapeHtml = (value) => {
+        return String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    };
+
+    const scrollToBottom = () => {
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+    };
+
+    const saveHistory = () => {
+        try {
+            localStorage.setItem(CHAT_HISTORY_KEY, JSON.stringify(history.slice(-HISTORY_LIMIT)));
+        } catch (error) {
+            // Ignore localStorage failures.
+        }
+    };
+
+    let lastSuggestedConfig = null;
+    const renderMessages = () => {
+        if (!history.length) {
+            messagesBox.innerHTML = "";
+            scrollToBottom();
+            return;
+        }
+
+        // Nếu message cuối cùng là assistant và có cấu hình gợi ý, hiển thị nút
+        let html = history
+            .map((item, idx) => {
+                const roleClass = item.role === "user" ? "is-user" : "is-assistant";
+                let bubble = `<div class="pcai-message-bubble">${escapeHtml(item.text).replaceAll("\n", "<br />")}</div>`;
+                // Nếu là assistant, cuối cùng, có lastSuggestedConfig, thêm nút
+                if (
+                    item.role === "assistant" &&
+                    idx === history.length - 1 &&
+                    lastSuggestedConfig &&
+                    Object.keys(lastSuggestedConfig).length > 0
+                ) {
+                    bubble += `<div style='margin-top:8px;text-align:right;'><button class='pcai-use-config-btn' type='button'>Dùng cấu hình này <i class="bi bi-cart-plus"></i></button></div>`;
+                }
+                return `<article class="pcai-message ${roleClass}">${bubble}</article>`;
+            })
+            .join("");
+        messagesBox.innerHTML = html;
+        // Gắn event cho nút nếu có
+        if (lastSuggestedConfig && Object.keys(lastSuggestedConfig).length > 0) {
+            const btn = messagesBox.querySelector('.pcai-use-config-btn');
+            if (btn) {
+                btn.onclick = async function () {
+                    btn.disabled = true;
+                    btn.innerHTML = 'Đang thêm...';
+                    try {
+                        // Chuyển cấu hình thành mảng cart_items
+                        const cart_items = Object.values(lastSuggestedConfig).map(pid => ({ product_id: pid, quantity: 1 }));
+                        const resp = await fetch('/api/cart/save-to-session/', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ cart_items, sync_db: true })
+                        });
+                        const data = await resp.json();
+                        if (resp.ok) {
+                            btn.innerHTML = 'Đã thêm vào giỏ!';
+                            setTimeout(() => { btn.innerHTML = 'Dùng cấu hình này <i class="bi bi-cart-plus"></i>'; btn.disabled = false; }, 2000);
+                        } else {
+                            btn.innerHTML = 'Lỗi!';
+                            setTimeout(() => { btn.innerHTML = 'Dùng cấu hình này <i class="bi bi-cart-plus"></i>'; btn.disabled = false; }, 2000);
+                        }
+                    } catch (e) {
+                        btn.innerHTML = 'Lỗi!';
+                        setTimeout(() => { btn.innerHTML = 'Dùng cấu hình này <i class="bi bi-cart-plus"></i>'; btn.disabled = false; }, 2000);
+                    }
+                };
+            }
+        }
+        scrollToBottom();
+    };
+
+    const addMessage = (role, text, persist = true) => {
+        const normalizedText = String(text || "").trim();
+        if (!normalizedText) return;
+
+        history.push({ role, text: normalizedText });
+        if (history.length > HISTORY_LIMIT) {
+            history = history.slice(-HISTORY_LIMIT);
+        }
+
+        if (persist) {
+            saveHistory();
+        }
+        renderMessages();
+    };
+
+    const loadHistory = () => {
+        try {
+            const raw = localStorage.getItem(CHAT_HISTORY_KEY);
+            if (!raw) return;
+
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return;
+
+            history = parsed
+                .filter((item) => item && (item.role === "user" || item.role === "assistant"))
+                .map((item) => ({
+                    role: item.role,
+                    text: String(item.text || "").trim(),
+                }))
+                .filter((item) => item.text)
+                .slice(-HISTORY_LIMIT);
+        } catch (error) {
+            history = [];
+        }
+    };
+
+    const setSendingState = (sending) => {
+        isSending = Boolean(sending);
+        submitButton.disabled = isSending;
+        input.disabled = isSending;
+        panel.classList.toggle("is-loading", isSending);
+    };
+
+    const openChat = () => {
+        if (isOpen) {
+            input.focus();
+            return;
+        }
+
+        isOpen = true;
+        chatRoot.classList.add("is-open");
+        panel.setAttribute("aria-hidden", "false");
+        input.focus();
+        scrollToBottom();
+    };
+
+    const closeChat = () => {
+        isOpen = false;
+        chatRoot.classList.remove("is-open");
+        panel.setAttribute("aria-hidden", "true");
+    };
+
+    const resetChatHistory = () => {
+        history = [{ role: "assistant", text: WELCOME_MESSAGE }];
+        saveHistory();
+        renderMessages();
+        input.focus();
+    };
+
+    const sendQuestion = async (question) => {
+        const trimmed = String(question || "").trim();
+        if (!trimmed || isSending) return;
+
+        addMessage("user", trimmed);
+        setSendingState(true);
+        lastSuggestedConfig = null;
+
+        try {
+            const response = await fetch("/api/chat/data/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ question: trimmed })
+            });
+
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload.error || payload.details || "Khong the ket noi tro ly AI.");
+            }
+
+            // Nếu có cấu hình gợi ý, lưu lại để render nút
+            if (payload.suggested_config && typeof payload.suggested_config === 'object') {
+                lastSuggestedConfig = payload.suggested_config;
+            } else {
+                lastSuggestedConfig = null;
+            }
+            addMessage("assistant", payload.answer || "Chua nhan duoc cau tra loi. Ban thu lai nhe.");
+        } catch (error) {
+            lastSuggestedConfig = null;
+            addMessage("assistant", error && error.message ? error.message : "Dang co loi ket noi toi tro ly AI.");
+        } finally {
+            setSendingState(false);
+            input.focus();
+        }
+    };
+
+    loadHistory();
+    if (!history.length) {
+        history = [{ role: "assistant", text: WELCOME_MESSAGE }];
+        saveHistory();
+    }
+    renderMessages();
+
+    toggleButton.addEventListener("click", () => {
+        if (isOpen) {
+            closeChat();
+        } else {
+            openChat();
+        }
+    });
+
+    closeButton.addEventListener("click", closeChat);
+
+    clearButton.addEventListener("click", () => {
+        const confirmed = window.confirm("Xoa toan bo lich su chat?\nChat se quay ve loi chao ban dau.");
+        if (!confirmed) return;
+
+        try {
+            localStorage.removeItem(CHAT_HISTORY_KEY);
+        } catch (error) {
+            // Ignore localStorage failures.
+        }
+
+        resetChatHistory();
+        openChat();
+    });
+
+    form.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const text = input.value;
+        input.value = "";
+        sendQuestion(text);
+    });
+
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+            event.preventDefault();
+            form.requestSubmit();
+        }
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && isOpen) {
+            closeChat();
+        }
+    });
+
+    window.pcAiChatbox = {
+        open: openChat,
+    };
+})();
+</script>

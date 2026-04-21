@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    {% now "U" as css_version %}
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chi tiết đơn hàng #{{ order.id_orders }} - {{ website_name_display|default:'LTC Computer' }}</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    {% load static %}
+    <link rel="stylesheet" href="{% static 'store/site.css' %}?v={{ css_version }}">
+</head>
+<body class="page-order-detail">
+    {% include 'store/partials/_site_header.html' %}
+
+    <div class="container-lg page-top-wrap">
+        <div class="page-top-actions">
+            <nav class="breadcrumb-trail" aria-label="breadcrumb">
+                <a href="/">Trang chủ</a>
+                <i class="bi bi-chevron-right"></i>
+                <a href="/api/orders/">Đơn hàng của tôi</a>
+                <i class="bi bi-chevron-right"></i>
+                <span>Chi tiết đơn hàng</span>
+            </nav>
+            <a href="/api/orders/" class="top-action-btn top-action-btn--subtle">
+                <i class="bi bi-arrow-left"></i> Quay lại danh sách
+            </a>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+    <div class="container-lg mt-3">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Main Content -->
+    <div class="container-lg mb-5">
+        <!-- Status Timeline -->
+        <div class="order-status-timeline">
+            <div class="status-item {% if order.status_orders == 'pending' or order.status_orders in 'confirmed shipping completed' %}active{% endif %}">
+                <div class="status-icon">
+                    <i class="bi bi-bag-check"></i>
+                </div>
+                <div class="status-label">Đợi xác nhận</div>
+            </div>
+            <div class="status-item {% if order.status_orders in 'confirmed shipping completed' %}active{% endif %}">
+                <div class="status-icon">
+                    <i class="bi bi-check-circle"></i>
+                </div>
+                <div class="status-label">Đã xác nhận</div>
+            </div>
+            <div class="status-item {% if order.status_orders in 'shipping completed' %}active{% endif %}">
+                <div class="status-icon">
+                    <i class="bi bi-box-seam"></i>
+                </div>
+                <div class="status-label">Đang giao</div>
+            </div>
+            <div class="status-item {% if order.status_orders == 'completed' %}active{% endif %}">
+                <div class="status-icon">
+                    <i class="bi bi-house-check"></i>
+                </div>
+                <div class="status-label">Hoàn thành</div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Left Column -->
+            <div class="col-lg-8">
+                <!-- Order Items -->
+                <div class="info-card">
+                    <h3><i class="bi bi-box-seam"></i> Chi tiết sản phẩm</h3>
+                    
+                    <table class="order-items-table">
+                        <thead>
+                            <tr>
+                                <th>Thông tin sản phẩm</th>
+                                <th style="text-align: center;">Số lượng</th>
+                                <th style="text-align: center;">Ngày đặt</th>
+                                <th class="price-cell">Giá</th>
+                                <th class="price-cell">Thành tiền</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in order_items %}
+                            <tr>
+                                <td>
+                                    <div style="display: flex; gap: 10px; align-items: center;">
+                                        {% if item.product_image_url %}
+                                        <img src="{{ item.product_image_url }}" alt="{{ item.id_products.name_products }}" class="item-image">
+                                        {% else %}
+                                        <div style="width: 60px; height: 60px; background: #f0f0f0; border-radius: 4px; display: flex; align-items: center; justify-content: center;">
+                                            <i class="bi bi-box" style="color: #999;"></i>
+                                        </div>
+                                        {% endif %}
+                                        <div>
+                                            <div class="item-name">{{ item.id_products.name_products }}</div>
+                                            <div style="font-size: 12px; color: #6b7280; margin-top: 4px;">
+                                                Mã SP: #{{ item.id_products.id_products }}
+                                                {% if item.id_products.brand %}
+                                                | Thương hiệu: {{ item.id_products.brand }}
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td style="text-align: center;">{{ item.quantity_order_items }}</td>
+                                <td style="text-align: center;">{{ order.created_at_orders|date:"d/m/Y H:i" }}</td>
+                                <td class="price-cell">{{ item.display_price }} ₫</td>
+                                <td class="price-cell">{{ item.display_subtotal }} ₫</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Shipping Address -->
+                <div class="info-card">
+                    <h3><i class="bi bi-geo-alt"></i> Địa chỉ giao hàng</h3>
+                    
+                    <div style="padding: 15px; background: #f8f9fa; border-radius: 5px;">
+                        <div style="font-weight: 500; color: #1f2937; margin-bottom: 10px;">
+                            {% if user %}{{ user.name_users }}{% else %}Khách hàng{% endif %}
+                        </div>
+                        <div style="font-size: 14px; color: #4b5563; line-height: 1.6;">
+                            <p style="margin: 0; margin-bottom: 8px;">
+                                <i class="bi bi-telephone"></i> 
+                                {% if shipping_address and shipping_address.phone_address %}
+                                    {{ shipping_address.phone_address }}
+                                {% else %}
+                                    {{ user.phone_users|default:"Chưa cập nhật số điện thoại" }}
+                                {% endif %}
+                            </p>
+                            <p style="margin: 0;">
+                                <i class="bi bi-map"></i> 
+                                {% if shipping_address %}
+                                    {{ shipping_address.full_address }}
+                                {% else %}
+                                    {{ user.address_users|default:"Chưa cập nhật địa chỉ" }}
+                                {% endif %}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column -->
+            <div class="col-lg-4">
+                <!-- Order Summary -->
+                <div class="order-summary">
+                    <h3 style="font-size: 16px; font-weight: 600; color: #1f2937; margin-bottom: 15px;">Tóm tắt đơn hàng</h3>
+                    
+                    <div class="summary-row">
+                        <span>Giá:</span>
+                        <span>{{ order.display_subtotal_after_product_discount }} ₫</span>
+                    </div>
+                    <div class="summary-row">
+                        <span>Phí vận chuyển:</span>
+                        <span style="color: #c1122f;">Miễn phí</span>
+                    </div>
+                    <div class="summary-row">
+                        <span>Mã giảm giá:</span>
+                        <span>-{{ order.display_promotion_discount }} ₫</span>
+                    </div>
+                    <div class="summary-row total">
+                        <span>TỔNG CỘNG:</span>
+                        <span>{{ order.display_total }} ₫</span>
+                    </div>
+                </div>
+
+                <!-- Order Info -->
+                <div class="info-card">
+                    <h3><i class="bi bi-info-circle"></i> Thông tin đơn hàng</h3>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Mã đơn hàng:</span>
+                        <span class="info-value">#{{ order.id_orders }}</span>
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Ngày đặt:</span>
+                        <span class="info-value">{{ order.created_at_orders|date:"d/m/Y" }}</span>
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Giờ đặt:</span>
+                        <span class="info-value">{{ order.created_at_orders|date:"H:i" }}</span>
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Trạng thái:</span>
+                        <span class="info-value">
+                            <span style="display: inline-block; padding: 4px 10px; border-radius: 15px; font-size: 12px; font-weight: 600; 
+                                {% if order.status_orders == 'pending' %}
+                                    background: #fff7cc; color: #7a5a00;
+                                {% elif order.status_orders == 'confirmed' %}
+                                    background: #ffe8d9; color: #9a3412;
+                                {% elif order.status_orders == 'shipping' %}
+                                    background: #e0f2fe; color: #075985;
+                                {% elif order.status_orders == 'completed' %}
+                                    background: #d4edda; color: #155724;
+                                {% else %}
+                                    background: #f8d7da; color: #721c24;
+                                {% endif %}
+                            ">
+                                {{ order.status_display }}
+                            </span>
+                        </span>
+                    </div>
+                    
+                    <div class="info-row">
+                        <span class="info-label">Số lượng item:</span>
+                        <span class="info-value">{{ order_items.count }} sản phẩm</span>
+                    </div>
+
+                    {% if can_cancel_order %}
+                    <div style="margin-top: 14px;">
+                        <button
+                            type="button"
+                            class="btn-cancel-order"
+                            data-bs-toggle="modal"
+                            data-bs-target="#cancelOrderModal"
+                        >
+                            <i class="bi bi-x-circle"></i> Hủy đơn hàng
+                        </button>
+                    </div>
+                    {% endif %}
+
+                    {% if order.status_orders == 'cancelled' and order_cancel_reason_text %}
+                    <div class="cancel-reason-note">
+                        <strong>Lý do hủy:</strong> {{ order_cancel_reason_text }}
+                    </div>
+                    {% endif %}
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    {% if can_cancel_order %}
+    <div class="modal fade" id="cancelOrderModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content" style="border-radius: 14px; border: 1px solid #ececec;">
+                <div class="modal-header cancel-modal-header">
+                    <div>
+                        <h5 class="modal-title cancel-modal-title">Hủy đơn hàng #{{ order.id_orders }}</h5>
+                        <p class="cancel-modal-subtitle">Chọn lý do để chúng tôi cải thiện dịch vụ tốt hơn.</p>
+                    </div>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form method="post" action="">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="cancel_order">
+                    <div class="modal-body">
+                        <label for="cancel_reason" class="form-label" style="font-size: 13px; font-weight: 600; color: #374151;">Lý do hủy đơn</label>
+                        <select id="cancel_reason" name="cancel_reason" class="form-select cancel-select" required>
+                            <option value="">-- Chọn lý do --</option>
+                            {% for reason in order_cancel_reasons %}
+                            <option value="{{ reason }}">{{ reason }}</option>
+                            {% endfor %}
+                        </select>
+
+                        <div id="cancel_reason_other_wrap" style="display: none; margin-top: 12px;">
+                            <label for="cancel_reason_other" class="form-label" style="font-size: 13px; font-weight: 600; color: #374151;">Nhập lý do cụ thể</label>
+                            <textarea
+                                id="cancel_reason_other"
+                                name="cancel_reason_other"
+                                class="form-control cancel-textarea"
+                                rows="3"
+                                maxlength="255"
+                                placeholder="Ví dụ: Em cần đổi sang model khác"
+                            ></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-footer" style="border-top: 1px solid #f1f1f1;">
+                        <button type="button" class="btn btn-light" data-bs-dismiss="modal">Không hủy</button>
+                        <button type="submit" class="btn btn-confirm-cancel">Xác nhận hủy đơn</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% include 'store/partials/_site_footer.html' %}
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    {% if can_cancel_order %}
+    <script>
+        (function () {
+            const reasonSelect = document.getElementById("cancel_reason");
+            const reasonOtherWrap = document.getElementById("cancel_reason_other_wrap");
+            const reasonOtherInput = document.getElementById("cancel_reason_other");
+
+            if (!reasonSelect || !reasonOtherWrap || !reasonOtherInput) {
+                return;
+            }
+
+            function toggleOtherReasonField() {
+                const isOther = reasonSelect.value === "Lý do khác";
+                reasonOtherWrap.style.display = isOther ? "block" : "none";
+                reasonOtherInput.required = isOther;
+                if (!isOther) {
+                    reasonOtherInput.value = "";
+                }
+            }
+
+            reasonSelect.addEventListener("change", toggleOtherReasonField);
+            toggleOtherReasonField();
+        })();
+    </script>
+    {% endif %}
+</body>
+</html>
