@@ -114,13 +114,16 @@
                         </div>
 
                         <ul class="highlight-list">
-    <span class="rating-stars" aria-label="Đánh giá {{ product.rating_value }} sao">
+    <span class="rating-stars" aria-label="Đánh giá trung bình {{ product.rating_value }} sao">
         <span class="rating-text">Đánh giá:</span>
-        <i class="bi bi-star-fill"></i>
-        <i class="bi bi-star-fill"></i>
-        <i class="bi bi-star-fill"></i>
-        <i class="bi bi-star-fill"></i>
-        <i class="bi bi-star-half"></i>
+        {% for _ in "12345" %}
+            {% if forloop.counter <= product.rating_star_count %}
+                <i class="bi bi-star-fill"></i>
+            {% else %}
+                <i class="bi bi-star"></i>
+            {% endif %}
+        {% endfor %}
+        <span class="rating-value">{{ product.rating_value }} ({{ product.rating_count }} đánh giá)</span>
     </span>
 
     <li><i class="bi bi-check-circle-fill"></i> Sản phẩm chính hãng, đầy đủ hóa đơn và bảo hành.</li>
@@ -146,8 +149,58 @@
                             <p class="promo-note">Giá đã bao gồm VAT. Có thể thay đổi theo chương trình ưu đãi.</p>
                         </section>
 
-                        <div class="cta-block">
+            <div class="cta-block">
                             <div class="cta-row">
+                                {% if product.is_discontinued %}
+                                <div class="alert alert-warning" role="alert">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                    Sản phẩm này hiện tại đã ngừng kinh doanh. 
+                                </div>
+                                <button
+                                    type="button"
+                                    class="btn-add-cart disabled"
+                                    disabled
+                                    aria-label="Thêm vào giỏ hàng"
+                                >
+                                    <i class="bi bi-cart-plus-fill"></i> THÊM VÀO GIỎ (NGỪNG KINH DOANH)
+                                </button>
+                                {% elif product.is_out_of_stock %}
+                                <div class="alert alert-danger" role="alert">
+                                    <i class="bi bi-x-circle-fill"></i>
+                                    Sản phẩm này hiện tại đã hết hàng. 
+                                </div>
+                                <button
+                                    type="button"
+                                    class="btn-add-cart disabled"
+                                    disabled
+                                    aria-label="Thêm vào giỏ hàng"
+                                >
+                                    <i class="bi bi-cart-plus-fill"></i> THÊM VÀO GIỎ (HẾT HÀNG)
+                                </button>
+                                {% else %}
+                                {% if product.is_low_stock %}
+                                <div class="alert alert-warning" role="alert">
+                                    <i class="bi bi-exclamation-circle-fill"></i>
+                                    Sản phẩm sắp hết hàng. Chỉ còn {{ product.stock }} sản phẩm. 
+                                </div>
+                                {% endif %}
+                                <div class="quantity-selector-row" style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+                                    <label for="product-quantity" style="font-weight: 500; margin: 0;">Số lượng:</label>
+                                    <input
+                                        type="number"
+                                        id="product-quantity"
+                                        class="form-control"
+                                        value="1"
+                                        min="1"
+                                        max="{{ product.stock }}"
+                                        style="width: 80px; padding: 6px 10px;"
+                                    />
+                                    <span style="color: #666; font-size: 0.9em;">Còn {{ product.stock }} sản phẩm</span>
+                                </div>
+                                <div id="stock-error-msg" class="alert alert-danger" role="alert" style="display: none;">
+                                    <i class="bi bi-exclamation-triangle-fill"></i>
+                                    Kho hàng không đủ. Vui lòng chọn số lượng phù hợp.
+                                </div>
                                 <button
                                     type="button"
                                     class="btn-add-cart"
@@ -158,9 +211,11 @@
                                     data-product-category="{{ product.category|default:'Khác'|escape }}"
                                     data-product-price="{{ product.price|cut:',' }}"
                                     data-product-image="{{ product.primary_image|default:''|escape }}"
+                                    data-product-stock="{{ product.stock }}"
                                 >
                                     <i class="bi bi-cart-plus-fill"></i> THÊM VÀO GIỎ
                                 </button>
+                                {% endif %}
                                 {% comment %} <button
                                     type="button"
                                     class="btn-buy-now"
@@ -211,6 +266,81 @@
                         </table>
                     </div>
                 </section> {% endcomment %}
+
+                <section class="reviews-section mt-4">
+                    {% comment %} <div class="products-toolbar" style="margin-bottom: 10px;">
+                        <h2 class="products-title">Đánh giá sản phẩm</h2>
+                        <span class="text-muted small">{{ product.rating_count }} đánh giá · {{ product.rating_value }} sao</span>
+                    </div> {% endcomment %}
+
+                    {% if logged_in_user_id %}
+                        {% if can_review %}
+                            <form method="post" class="review-form card p-3 mb-3">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="submit_review" />
+                                <div class="mb-2">
+                                            <h3 class="products-title">Đánh giá sản phẩm</h3>
+                                    <label class="form-label fw-semibold">Đánh giá: </label>
+                                    <div class="review-star-input" role="radiogroup" aria-label="Chọn số sao">
+                                        <input type="radio" id="rating-5" name="rating" value="5" {% if my_review and my_review.rating == 5 %}checked{% endif %} required>
+                                        <label for="rating-5" title="5 sao"><i class="bi bi-star-fill"></i></label>
+
+                                        <input type="radio" id="rating-4" name="rating" value="4" {% if my_review and my_review.rating == 4 %}checked{% endif %}>
+                                        <label for="rating-4" title="4 sao"><i class="bi bi-star-fill"></i></label>
+
+                                        <input type="radio" id="rating-3" name="rating" value="3" {% if my_review and my_review.rating == 3 %}checked{% endif %}>
+                                        <label for="rating-3" title="3 sao"><i class="bi bi-star-fill"></i></label>
+
+                                        <input type="radio" id="rating-2" name="rating" value="2" {% if my_review and my_review.rating == 2 %}checked{% endif %}>
+                                        <label for="rating-2" title="2 sao"><i class="bi bi-star-fill"></i></label>
+
+                                        <input type="radio" id="rating-1" name="rating" value="1" {% if my_review and my_review.rating == 1 %}checked{% endif %}>
+                                        <label for="rating-1" title="1 sao"><i class="bi bi-star-fill"></i></label>
+                                    </div>
+                                </div>
+                                <div class="mb-2">
+                                    <label class="form-label fw-semibold">Nhận xét</label>
+                                    <textarea name="comment" class="form-control" rows="3" placeholder="Chia sẻ trải nghiệm của bạn với sản phẩm này...">{% if my_review %}{{ my_review.comment }}{% endif %}</textarea>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                                    {% comment %} <small class="text-muted">Chỉ người đã mua và nhận hàng (đơn hoàn thành) mới được đánh giá.</small> {% endcomment %}
+                                    <button type="submit" class="btn btn-sm btn-primary">
+                                        {% if my_review %}Cập nhật đánh giá{% else %}Gửi đánh giá{% endif %}
+                                    </button>
+                                </div>
+                            </form>
+                        {% else %}
+                            <div class="alert alert-info mb-3">Bạn cần mua và nhận sản phẩm (đơn hoàn thành) để có thể đánh giá.</div>
+                        {% endif %}
+                    {% else %}
+                        <div class="alert alert-info mb-3">Vui lòng đăng nhập để đánh giá sản phẩm sau khi mua hàng.</div>
+                    {% endif %}
+
+                    <div class="reviews-list">
+                        {% for review in reviews %}
+                            <article class="review-item card p-3 mb-2">
+                                <div class="d-flex justify-content-between align-items-start gap-2">
+                                    <div>
+                                        <strong>{{ review.id_users.name_users }}</strong>
+                                        <div class="text-warning" aria-label="{{ review.rating }} sao">
+                                            {% for _ in "12345" %}
+                                                {% if forloop.counter <= review.rating %}
+                                                    <i class="bi bi-star-fill"></i>
+                                                {% else %}
+                                                    <i class="bi bi-star"></i>
+                                                {% endif %}
+                                            {% endfor %}
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">{{ review.created_at_reviews|date:"d/m/Y H:i" }}</small>
+                                </div>
+                                <p class="mb-0 mt-2">{{ review.comment|default:"(Không có nhận xét)" }}</p>
+                            </article>
+                        {% empty %}
+                            <div class="alert alert-light border mb-0">Chưa có đánh giá nào cho sản phẩm này.</div>
+                        {% endfor %}
+                    </div>
+                </section>
             </section>
 
             {% if recommended_products %}
@@ -454,6 +584,24 @@
             const addToCartButton = document.querySelector("[data-cart-add]");
             if (addToCartButton && window.PCAI_CART) {
                 addToCartButton.addEventListener("click", () => {
+                    const quantityInput = document.getElementById("product-quantity");
+                    const stockErrorMsg = document.getElementById("stock-error-msg");
+                    const selectedQuantity = quantityInput ? parseInt(quantityInput.value, 10) : 1;
+                    const maxStock = parseInt(addToCartButton.dataset.productStock, 10) || 0;
+
+                    // Kiểm tra số lượng không vượt quá tồn kho
+                    if (selectedQuantity > maxStock) {
+                        if (stockErrorMsg) {
+                            stockErrorMsg.style.display = "block";
+                        }
+                        return;
+                    }
+
+                    // Ẩn thông báo lỗi nếu hợp lệ
+                    if (stockErrorMsg) {
+                        stockErrorMsg.style.display = "none";
+                    }
+
                     if (typeof window.PCAI_CART.requireLoginForCartAction === "function") {
                         if (!window.PCAI_CART.requireLoginForCartAction()) {
                             return;
@@ -466,12 +614,12 @@
                         brand: addToCartButton.dataset.productBrand || "N/A",
                         price: Number.parseFloat(addToCartButton.dataset.productPrice || "0") || 0,
                         image: addToCartButton.dataset.productImage || "",
-                        quantity: 1
+                        quantity: selectedQuantity
                     };
 
                     if (!productPayload.id) return;
 
-                    window.PCAI_CART.addItem(productPayload, 1);
+                    window.PCAI_CART.addItem(productPayload, selectedQuantity);
 
                     fetch("/api/behavior/", {
                         method: "POST",
@@ -486,11 +634,16 @@
                         // Ignore tracking failure to avoid affecting cart action.
                     });
 
-                    window.PCAI_CART.showToast("Đã thêm sản phẩm vào giỏ hàng", "success");
+                    window.PCAI_CART.showToast("Đã thêm " + selectedQuantity + " sản phẩm vào giỏ hàng", "success");
 
                     const defaultLabel = "THÊM VÀO GIỎ";
                     addToCartButton.textContent = "ĐÃ THÊM";
                     addToCartButton.disabled = true;
+
+                    // Reset quantity input sau khi thêm vào giỏ
+                    if (quantityInput) {
+                        quantityInput.value = 1;
+                    }
 
                     setTimeout(() => {
                         addToCartButton.textContent = defaultLabel;
@@ -568,6 +721,8 @@
         })();
     </script>
 
+<link rel="stylesheet" href="/static/store/chatbot.css">
+<script src="/static/store/chatbot.js"></script>
 </body>
 
 <!-- Modal Quên mật khẩu -->

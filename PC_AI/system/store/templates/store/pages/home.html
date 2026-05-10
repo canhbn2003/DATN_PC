@@ -17,7 +17,7 @@
 <body>
     {% include 'store/partials/_site_header.html' %}
 
-    {% if not selected_category_id and not is_search_result %}
+    {% if not hide_home_hero and not selected_category_id and not is_search_result %}
     <section class="banner-section home-surface home-surface-gray">
         {% if website_main_banner_urls %}
         <div class="container">
@@ -124,9 +124,46 @@
         {% endif %}
     </section>
     {% endif %}
+
+    {% if categories %}
+    <section class="home-surface home-surface-white quick-category-nav-surface">
+        <div class="quick-category-nav-wrap" style="padding:30px 24px 0; border-top:0; width:100%; max-width:1340px; margin:0 auto; box-sizing:border-box;">
+    <nav class="quick-category-nav" aria-label="Chuyển nhanh danh mục">
+        <a href="/products/all/" class="quick-category-link{% if is_all_products_page %} is-active{% endif %}">
+            <i class="bi bi-grid-3x3-gap"></i>
+            <span>Tất cả sản phẩm</span>
+        </a>
+        {% for category in categories %}
+            <a href="/?category={{ category.id_categories }}" class="quick-category-link{% if selected_category_id == category.id_categories|stringformat:'s' %} is-active{% endif %}">
+                {% if forloop.counter == 1 %}
+                    <i class="bi bi-laptop"></i>
+                {% elif forloop.counter == 2 %}
+                    <i class="bi bi-pc-display"></i>
+                {% elif forloop.counter == 3 %}
+                    <i class="bi bi-display"></i>
+                {% elif forloop.counter == 4 %}
+                    <i class="bi bi-cpu"></i>
+                {% elif forloop.counter == 5 %}
+                    <i class="bi bi-gpu-card"></i>
+                {% elif forloop.counter == 6 %}
+                    <i class="bi bi-memory"></i>
+                {% elif forloop.counter == 7 %}
+                    <i class="bi bi-device-hdd"></i>
+                {% elif forloop.counter == 8 %}
+                    <i class="bi bi-mouse"></i>
+                {% else %}
+                    <i class="bi bi-grid-3x3-gap"></i>
+                {% endif %}
+                <span>{{ category.name_categories }}</span>
+            </a>
+        {% endfor %}
+    </nav>
+</div>
+    </section>
+    {% endif %}
     
     <!-- Hot Sale Section -->
-    {% if hot_sale_products and not has_product_filters %}
+    {% if hot_sale_products and not has_product_filters and not hide_home_promotions %}
     <section class="home-surface home-surface-white">
         <div class="container">
             <div class="hot-sale-section">
@@ -163,7 +200,7 @@
     </section>
     {% endif %}
 
-    {% if recommended_products and not has_product_filters %}
+    {% if recommended_products and not has_product_filters and not hide_home_promotions %}
     <section class="catalog-main pb-1 home-surface home-surface-gray" data-session-recommendations data-session-limit="12">
         <div class="container">
             <section class="product-section">
@@ -187,47 +224,19 @@
         <div class="container">
             <section id="products" class="product-section">
                 <div class="products-toolbar">
-                    {% if selected_category_id %}
-                        <div class="quick-category-nav-wrap" style="padding:0; border-top:0; flex:1; min-width:0;">
-                            <nav class="quick-category-nav" aria-label="Chuyển nhanh danh mục">
-                                {% for category in categories %}
-                                    <a
-                                        href="/?category={{ category.id_categories }}"
-                                        class="quick-category-link{% if selected_category_id == category.id_categories|stringformat:'s' %} is-active{% endif %}"
-                                    >
-                                        {% if forloop.counter == 1 %}
-                                            <i class="bi bi-laptop"></i>
-                                        {% elif forloop.counter == 2 %}
-                                            <i class="bi bi-pc-display"></i>
-                                        {% elif forloop.counter == 3 %}
-                                            <i class="bi bi-display"></i>
-                                        {% elif forloop.counter == 4 %}
-                                            <i class="bi bi-cpu"></i>
-                                        {% elif forloop.counter == 5 %}
-                                            <i class="bi bi-gpu-card"></i>
-                                        {% elif forloop.counter == 6 %}
-                                            <i class="bi bi-memory"></i>
-                                        {% elif forloop.counter == 7 %}
-                                            <i class="bi bi-device-hdd"></i>
-                                        {% elif forloop.counter == 8 %}
-                                            <i class="bi bi-mouse"></i>
-                                        {% else %}
-                                            <i class="bi bi-grid-3x3-gap"></i>
-                                        {% endif %}
-                                        <span>{{ category.name_categories }}</span>
-                                    </a>
-                                {% endfor %}
-                            </nav>
-                        </div>
-
+                    {% if selected_category_id or is_all_products_page %}
                         <form method="get" class="d-flex align-items-center gap-2" style="flex-wrap:wrap;">
-                            <input type="hidden" name="category" value="{{ selected_category_id }}" />
-                            <select name="brand" class="form-select form-select-sm" style="width:auto;">
-                                <option value="">Tất cả hãng</option>
-                                {% for brand in categories|get_category:selected_category_id %}
-                                    <option value="{{ brand }}" {% if brand == selected_brand %}selected{% endif %}>{{ brand }}</option>
-                                {% endfor %}
-                            </select>
+                            {% if selected_category_id %}
+                                <input type="hidden" name="category" value="{{ selected_category_id }}" />
+                                <select name="brand" class="form-select form-select-sm" style="width:auto;">
+                                    <option value="">Tất cả hãng</option>
+                                    {% for brand in categories|get_category:selected_category_id %}
+                                        <option value="{{ brand }}" {% if brand == selected_brand %}selected{% endif %}>{{ brand }}</option>
+                                    {% endfor %}
+                                </select>
+                            {% else %}
+                                <input type="hidden" name="layout" value="all-products" />
+                            {% endif %}
                             <select name="price_range" class="form-select form-select-sm" style="width:auto;">
                                 <option value="">Tất cả giá</option>
                                 <option value="lt5" {% if selected_price_range == 'lt5' %}selected{% endif %}>Dưới 5 triệu</option>
@@ -235,14 +244,29 @@
                                 <option value="15-20" {% if selected_price_range == '15-20' %}selected{% endif %}>Từ 15 đến 20 triệu</option>
                                 <option value="gt20" {% if selected_price_range == 'gt20' %}selected{% endif %}>Trên 20 triệu</option>
                             </select>
+                            <select name="sort" class="form-select form-select-sm" style="width:auto;">
+                                {% comment %} <option value="best_selling" {% if selected_sort == 'best_selling' %}selected{% endif %}>Bán chạy nhất</option> {% endcomment %}
+                                <option value="price_asc" {% if selected_sort == 'price_asc' %}selected{% endif %}>Giá tăng dần</option>
+                                <option value="price_desc" {% if selected_sort == 'price_desc' %}selected{% endif %}>Giá giảm dần</option>
+                            </select>
+                            <label class="form-check form-check-inline m-0 align-items-center gap-1" style="padding:0 px; min-height: 32px; border: 0px solid #d1d5db; border-radius: 6px; background:#fff;">
+                                <input class="form-check-input m-0 mt-1 me-3" type="checkbox" name="best_selling" value="1" {% if selected_best_selling %}checked{% endif %} />
+                                <span class="form-check-label small">Bán chạy</span>
+                            </label>
                             <button type="submit" class="btn btn-sm btn-primary">Lọc</button>
-                            <a class="btn btn-sm btn-outline-secondary" href="/">Xóa lọc</a>
+                            {% if is_all_products_page %}
+                                <a class="btn btn-sm btn-outline-secondary" href="/products/all/">Xóa lọc</a>
+                            {% else %}
+                                <a class="btn btn-sm btn-outline-secondary" href="/?category={{ selected_category_id }}">Xóa lọc</a>
+                            {% endif %}
                         </form>
                     {% else %}
-                        {% if is_search_result %}
+                        {% if is_all_products_page %}
+                            <h2 class="products-title">{{ catalog_title }}</h2>
+                        {% elif is_search_result %}
                             <h2 class="products-title">Kết quả tìm kiếm{% if search_query %}: "{{ search_query }}"{% endif %}</h2>
                         {% else %}
-                            <h2 class="products-title">Sản phẩm bán chạy</h2>
+                            <h2 class="products-title">{{ catalog_title }}</h2>
                         {% endif %}
                     {% endif %}
                 </div>
@@ -258,6 +282,35 @@
                         </div>
                     {% endfor %}
                 </div>
+                {% if page_obj and page_obj.paginator.num_pages > 1 %}
+                <nav class="pagination-wrap d-flex justify-content-center mt-4" aria-label="Phân trang sản phẩm">
+                    <ul class="pagination pagination-sm">
+                        {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_obj.previous_page_number }}" aria-label="Trang trước">&laquo;</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">&laquo;</span></li>
+                        {% endif %}
+
+                        {% for num in page_obj.paginator.page_range %}
+                            {% if num == page_obj.number %}
+                                <li class="page-item active" aria-current="page"><span class="page-link">{{ num }}</span></li>
+                            {% else %}
+                                <li class="page-item"><a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ num }}">{{ num }}</a></li>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if base_query %}{{ base_query }}&{% endif %}page={{ page_obj.next_page_number }}" aria-label="Trang sau">&raquo;</a>
+                        </li>
+                        {% else %}
+                        <li class="page-item disabled"><span class="page-link">&raquo;</span></li>
+                        {% endif %}
+                    </ul>
+                </nav>
+                {% endif %}
             </section>
         </div>
     </main>
@@ -387,11 +440,13 @@
                         <button type="button" class="auth-toggle-password" data-auth-eye>👁</button>
                     </div>
 
+
                     <label>Xác nhận mật khẩu <span>*</span></label>
                     <div class="auth-password-field">
-                        <input type="password" name="confirm_password" required minlength="6" placeholder="Nhập lại mật khẩu" />
+                        <input type="password" name="confirm_password" id="register-confirm-password" required minlength="6" placeholder="Nhập lại mật khẩu" />
                         <button type="button" class="auth-toggle-password" data-auth-eye>👁</button>
                     </div>
+                    <div id="register-confirm-password-error" class="invalid-feedback" style="color:#dc3545;display:none;margin-bottom:8px;"></div>
 
                     <button type="submit" class="auth-submit-btn">Đăng ký</button>
                 </form>
@@ -463,6 +518,38 @@
         }
 
 
+        // Kiểm tra xác nhận mật khẩu realtime cho form đăng ký
+        document.addEventListener('DOMContentLoaded', function() {
+            const registerForm = document.querySelector('form[action="/api/auth/register/"]');
+            if (registerForm) {
+                const passwordInput = registerForm.querySelector('input[name="password"]');
+                const confirmInput = registerForm.querySelector('input[name="confirm_password"]');
+                const errorDiv = document.getElementById('register-confirm-password-error');
+                function validateRegisterPassword() {
+                    if (confirmInput.value && passwordInput.value !== confirmInput.value) {
+                        errorDiv.textContent = 'Mật khẩu xác nhận không khớp.';
+                        errorDiv.style.display = 'block';
+                        confirmInput.classList.add('is-invalid');
+                    } else {
+                        errorDiv.textContent = '';
+                        errorDiv.style.display = 'none';
+                        confirmInput.classList.remove('is-invalid');
+                    }
+                }
+                passwordInput.addEventListener('input', validateRegisterPassword);
+                confirmInput.addEventListener('input', validateRegisterPassword);
+                registerForm.addEventListener('submit', function(e) {
+                    if (passwordInput.value !== confirmInput.value) {
+                        errorDiv.textContent = 'Mật khẩu xác nhận không khớp.';
+                        errorDiv.style.display = 'block';
+                        confirmInput.classList.add('is-invalid');
+                        confirmInput.focus();
+                        e.preventDefault();
+                    }
+                });
+            }
+        });
+
         (function () {
             const modal = document.getElementById("authModal");
             if (!modal) return;
@@ -488,6 +575,15 @@
             const resetPasswordPanel = modal.querySelector('[data-auth-panel="reset-password"]');
             const resetPasswordForm = document.getElementById('reset-password-form');
             const resetPasswordErrorMsg = document.getElementById('reset-password-error-msg');
+            const showPanel = (panelToShow) => {
+                [loginPanel, forgotPanel, otpPanel, resetPasswordPanel].forEach((panel) => {
+                    if (!panel) return;
+                    const isTarget = panel === panelToShow;
+                    panel.classList.toggle('active', isTarget);
+                    panel.style.display = isTarget ? '' : 'none';
+                });
+            };
+
             if (forgotForm && otpPanel && forgotPanel && resetPasswordPanel) {
                 // Thêm vùng hiển thị lỗi cho form forgot password
                 let forgotErrorMsg = forgotPanel.querySelector('.forgot-error-msg');
@@ -509,6 +605,85 @@
                     })
                     .then(res => res.json().then(data => ({status: res.status, data})))
                     .then(({status, data}) => {
+
+            if (otpForm && otpPanel && resetPasswordPanel) {
+                otpForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    if (otpErrorMsg) {
+                        otpErrorMsg.textContent = '';
+                        otpErrorMsg.style.display = 'none';
+                    }
+
+                    const formData = new FormData(otpForm);
+                    fetch(otpForm.action, {
+                        method: 'POST',
+                        body: formData,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    })
+                    .then(res => res.json().then(data => ({status: res.status, data})))
+                    .then(({data}) => {
+                        if (data.success) {
+                            showPanel(resetPasswordPanel);
+                            setAuthMainTitleForgot(true);
+                            if (resetPasswordErrorMsg) {
+                                resetPasswordErrorMsg.textContent = '';
+                                resetPasswordErrorMsg.style.display = 'none';
+                            }
+                            const newPasswordInput = resetPasswordForm ? resetPasswordForm.querySelector('input[name="new_password"]') : null;
+                            if (newPasswordInput) newPasswordInput.focus();
+                        } else {
+                            if (otpErrorMsg) {
+                                otpErrorMsg.textContent = data.message || 'Mã OTP không đúng hoặc đã hết hạn.';
+                                otpErrorMsg.style.display = '';
+                            }
+                        }
+                    })
+                    .catch(() => {
+                        if (otpErrorMsg) {
+                            otpErrorMsg.textContent = 'Có lỗi xảy ra!';
+                            otpErrorMsg.style.display = '';
+                        }
+                    });
+                });
+            }
+
+            if (resetPasswordForm && resetPasswordPanel) {
+                resetPasswordForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    if (resetPasswordErrorMsg) {
+                        resetPasswordErrorMsg.textContent = '';
+                        resetPasswordErrorMsg.style.display = 'none';
+                    }
+
+                    const formData = new FormData(resetPasswordForm);
+                    fetch(resetPasswordForm.action, {
+                        method: 'POST',
+                        body: formData,
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    })
+                    .then(res => res.json().then(data => ({status: res.status, data})))
+                    .then(({data}) => {
+                        if (data.success) {
+                            alert(data.message || 'Đổi mật khẩu thành công.');
+                            showPanel(loginPanel);
+                            setAuthMainTitleForgot(false);
+                            if (otpForm) otpForm.reset();
+                            resetPasswordForm.reset();
+                        } else {
+                            if (resetPasswordErrorMsg) {
+                                resetPasswordErrorMsg.textContent = data.message || 'Đổi mật khẩu thất bại.';
+                                resetPasswordErrorMsg.style.display = '';
+                            }
+                        }
+                    })
+                    .catch(() => {
+                        if (resetPasswordErrorMsg) {
+                            resetPasswordErrorMsg.textContent = 'Có lỗi xảy ra!';
+                            resetPasswordErrorMsg.style.display = '';
+                        }
+                    });
+                });
+            }
                         if (data.success) {
                             forgotPanel.classList.remove('active');
                             forgotPanel.style.display = 'none';
@@ -725,6 +900,10 @@
             }
         })();
     </script>
+<link rel="stylesheet" href="/static/store/chatbot.css">
+<script src="/static/store/chatbot.js"></script>
+<link rel="stylesheet" href="/static/store/chatbot.css">
+<script src="/static/store/chatbot.js"></script>
 </body>
 </html>
 

@@ -20,6 +20,7 @@ from django.views.generic.base import RedirectView
 from store.views import (
     cart_page,
     checkout,
+    all_products_page,
     flash_sale_page,
     home_page,
     product_detail_page,
@@ -32,6 +33,9 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path('', home_page, name='home_page'),
+    path('Product', home_page, name='product_listing_page'),
+    path('product', home_page, name='product_listing_page_lower'),
+    path('products/all/', all_products_page, name='all_products_page'),
     path('products/<int:product_id>/', product_detail_page, name='product_detail_page'),
     path('cart/', cart_page, name='cart_page'),
     path('checkout/', checkout, name='checkout_page'),

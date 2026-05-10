@@ -166,7 +166,7 @@
             };
 
             const getSelectedItems = (items) => {
-                return items.filter((item) => selectedItemIds.has(item.id));
+                return items.filter((item) => selectedItemIds.has(item.id) && !item.isDiscontinued);
             };
 
             const syncSelectAllState = (items) => {
@@ -174,7 +174,9 @@
                 const selectBar = document.getElementById("cartSelectBar");
                 if (!selectAllInput || !selectBar) return;
 
-                if (!items.length) {
+                const activeItems = items.filter((item) => !item.isDiscontinued);
+
+                if (!activeItems.length) {
                     selectBar.style.display = "none";
                     selectAllInput.checked = false;
                     selectAllInput.indeterminate = false;
@@ -183,8 +185,8 @@
 
                 selectBar.style.display = "block";
                 const selectedCount = getSelectedItems(items).length;
-                selectAllInput.checked = selectedCount === items.length;
-                selectAllInput.indeterminate = selectedCount > 0 && selectedCount < items.length;
+                selectAllInput.checked = selectedCount === activeItems.length;
+                selectAllInput.indeterminate = selectedCount > 0 && selectedCount < activeItems.length;
             };
 
             const renderSummary = (items) => {
@@ -208,19 +210,33 @@
                 const cartItems = window.PCAI_CART.getCart();
                 cartItemsWrap.innerHTML = "";
 
-                const idSet = new Set(cartItems.map((item) => item.id));
+                const sortedCartItems = [...cartItems].sort((a, b) => {
+                    const aDiscontinued = a.isDiscontinued ? 1 : 0;
+                    const bDiscontinued = b.isDiscontinued ? 1 : 0;
+                    if (aDiscontinued !== bDiscontinued) {
+                        return aDiscontinued - bDiscontinued;
+                    }
+                    return a.name.localeCompare(b.name, "vi");
+                });
+
+                const idSet = new Set(sortedCartItems.map((item) => item.id));
                 Array.from(selectedItemIds).forEach((id) => {
-                    if (!idSet.has(id)) {
+                    const match = sortedCartItems.find((item) => item.id === id);
+                    if (!idSet.has(id) || match?.isDiscontinued) {
                         selectedItemIds.delete(id);
                     }
                 });
 
-                if (!selectionInitialized && cartItems.length) {
-                    cartItems.forEach((item) => selectedItemIds.add(item.id));
+                if (!selectionInitialized && sortedCartItems.length) {
+                    sortedCartItems.forEach((item) => {
+                        if (!item.isDiscontinued) {
+                            selectedItemIds.add(item.id);
+                        }
+                    });
                     selectionInitialized = true;
                 }
 
-                if (!cartItems.length) {
+                if (!sortedCartItems.length) {
                     emptyState.classList.remove("d-none");
                     if (clearButton) clearButton.disabled = true;
                     renderSummary([]);
@@ -232,13 +248,16 @@
                 emptyState.classList.add("d-none");
                 if (clearButton) clearButton.disabled = false;
 
-                const rowsMarkup = cartItems.map((item) => {
+                const rowsMarkup = sortedCartItems.map((item) => {
                     const lineTotal = item.price * item.quantity;
                     const checkedAttr = selectedItemIds.has(item.id) ? "checked" : "";
+                    const discontinuedAttrs = item.isDiscontinued ? ' aria-disabled="true"' : "";
+                    const disabledControls = item.isDiscontinued ? "disabled" : "";
+                    const itemRowClass = item.isDiscontinued ? "cart-item-row cart-item-row--discontinued" : "cart-item-row";
                     return `
-                        <article class="cart-item-row" data-item-id="${item.id}">
+                        <article class="${itemRowClass}" data-item-id="${item.id}" data-discontinued="${item.isDiscontinued ? "1" : "0"}"${discontinuedAttrs}>
                             <div class="cart-item-check">
-                                <input type="checkbox" data-select-id="${item.id}" ${checkedAttr} aria-label="Chọn sản phẩm ${item.name}" />
+                                <input type="checkbox" data-select-id="${item.id}" ${checkedAttr} ${disabledControls} aria-label="Chọn sản phẩm ${item.name}" />
                             </div>
                             <div class="cart-item-product-wrap">
                                 <a href="/products/${item.id}/" class="cart-item-image-link" aria-label="${item.name}">
@@ -253,9 +272,9 @@
                             <div class="cart-item-col cart-item-col-qty">
                                 <span class="cart-col-label">Số lượng</span>
                                 <div class="cart-item-qty">
-                                <button type="button" class="qty-btn" data-qty-action="minus" data-id="${item.id}">-</button>
-                                <input type="number" min="1" value="${item.quantity}" data-qty-input data-id="${item.id}" />
-                                <button type="button" class="qty-btn" data-qty-action="plus" data-id="${item.id}">+</button>
+                                <button type="button" class="qty-btn" data-qty-action="minus" data-id="${item.id}" ${disabledControls}>-</button>
+                                <input type="number" min="1" value="${item.quantity}" data-qty-input data-id="${item.id}" ${disabledControls} />
+                                <button type="button" class="qty-btn" data-qty-action="plus" data-id="${item.id}" ${disabledControls}>+</button>
                                 </div>
                             </div>
                             <div class="cart-item-col cart-item-col-total">
@@ -270,9 +289,9 @@
                 }).join("");
 
                 cartItemsWrap.innerHTML = rowsMarkup;
-                renderSummary(cartItems);
-                syncCartToBackend(cartItems);
-                syncSelectAllState(cartItems);
+                renderSummary(sortedCartItems);
+                syncCartToBackend(sortedCartItems);
+                syncSelectAllState(sortedCartItems);
             };
 
             cartItemsWrap.addEventListener("click", (event) => {
@@ -305,6 +324,13 @@
                     const targetId = Number.parseInt(selectInput.dataset.selectId, 10) || 0;
                     if (!targetId) return;
 
+                    const currentItem = window.PCAI_CART.getCart().find((entry) => entry.id === targetId);
+                    if (currentItem?.isDiscontinued) {
+                        selectedItemIds.delete(targetId);
+                        selectInput.checked = false;
+                        return;
+                    }
+
                     if (selectInput.checked) {
                         selectedItemIds.add(targetId);
                     } else {
@@ -333,7 +359,11 @@
                 selectAllInput.addEventListener("change", () => {
                     const cartItems = window.PCAI_CART.getCart();
                     if (selectAllInput.checked) {
-                        cartItems.forEach((item) => selectedItemIds.add(item.id));
+                        cartItems.forEach((item) => {
+                            if (!item.isDiscontinued) {
+                                selectedItemIds.add(item.id);
+                            }
+                        });
                     } else {
                         selectedItemIds.clear();
                     }
@@ -387,6 +417,8 @@
             void renderItems();
         })();
     </script>
+<link rel="stylesheet" href="/static/store/chatbot.css">
+<script src="/static/store/chatbot.js"></script>
 </body>
 </html>
 

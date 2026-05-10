@@ -1,5 +1,5 @@
 import json
-from django.contrib import admin
+from django.contrib import admin, messages
 from django import forms
 import os
 import re
@@ -7,10 +7,9 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 from django.db.models import Sum
 from django.core.exceptions import ValidationError
-from django.utils.html import format_html_join
+from django.utils.html import format_html, format_html_join
 from django.utils.safestring import mark_safe
 from django.utils.text import get_valid_filename
-from django.forms.models import modelform_factory
 
 from .models import (
 	CartItem,
@@ -19,6 +18,7 @@ from .models import (
 	OrderItem,
 	Product,
 	ProductImage,
+	Review,
 	SearchHistory,
 	User,
 	UserAddress,
@@ -564,11 +564,13 @@ class UserAddressInline(VietnameseInlineMixin, admin.TabularInline):
 @admin.register(User)
 class UserAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 	inlines = [UserAddressInline]
-	list_display = ("display_id", "display_name", "email", "display_role", "display_created_at")
+	list_display = ("display_id", "display_name", "email", "display_role", "status", "display_created_at")
+	list_editable = ("status",)
 	search_fields = ("name_users", "email", "role")
-	list_filter = ("role", "created_at_users")
+	list_filter = ("role", "status", "created_at_users")
 	ordering = ("-id_users",)
 	list_display_links = ("display_id",)
+	actions = ("lock_users", "unlock_users")
 	field_labels = {
 		"id_users": "ID người dùng",
 		"name_users": "Họ tên",
@@ -577,6 +579,7 @@ class UserAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		"gender_users": "Giới tính",
 		"phone_users": "Số điện thoại",
 		"address_users": "Địa chỉ",
+		"status": "Trạng thái",
 		"role": "Vai trò",
 		"created_at_users": "Ngày tạo",
 	}
@@ -595,39 +598,140 @@ class UserAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 	def display_role(self, obj):
 		return obj.get_role_display() if hasattr(obj, "get_role_display") else obj.role
 
+	@admin.display(description="Trạng thái", ordering="status")
+	def display_status(self, obj):
+		return obj.get_status_display() if hasattr(obj, "get_status_display") else ("Đang hoạt động" if obj.status == 1 else "Ngừng hoạt động")
+
 	@admin.display(description="Ngày tạo", ordering="created_at_users")
 	def display_created_at(self, obj):
 		if not obj.created_at_users:
 			return ""
 		return obj.created_at_users.strftime("%d/%m/%Y %H:%M")
 
+	def _user_has_orders(self, user_obj):
+		return Order.objects.filter(id_users_id=user_obj.id_users).exists()
+
+	@admin.action(description="Khóa tài khoản đã chọn")
+	def lock_users(self, request, queryset):
+		updated = queryset.update(status=0)
+		self.message_user(request, f"Đã khóa {updated} tài khoản.", level=messages.WARNING)
+
+	@admin.action(description="Mở khóa tài khoản đã chọn")
+	def unlock_users(self, request, queryset):
+		updated = queryset.update(status=1)
+		self.message_user(request, f"Đã mở khóa {updated} tài khoản.", level=messages.SUCCESS)
+
+	def delete_model(self, request, obj):
+		if self._user_has_orders(obj):
+			if obj.status != 0:
+				obj.status = 0
+				obj.save(update_fields=["status"])
+			self.message_user(
+				request,
+				"Tài khoản đã có đơn hàng nên được chuyển sang trạng thái khóa thay vì xóa.",
+				level=messages.WARNING,
+			)
+			return
+		super().delete_model(request, obj)
+
+	def delete_queryset(self, request, queryset):
+		user_ids = list(queryset.values_list("id_users", flat=True))
+		if not user_ids:
+			return
+
+		users_with_orders = set(
+			Order.objects.filter(id_users_id__in=user_ids).values_list("id_users_id", flat=True)
+		)
+
+		if users_with_orders:
+			queryset.filter(id_users__in=users_with_orders).update(status=0)
+			self.message_user(
+				request,
+				"Một số tài khoản có đơn hàng đã được khóa thay vì xóa.",
+				level=messages.WARNING,
+			)
+
+		queryset.exclude(id_users__in=users_with_orders).delete()
+
 
 @admin.register(Category)
 class CategoryAdmin(VietnameseAdminMixin, admin.ModelAdmin):
-	list_display = ("display_id", "display_name")
+	list_display = ("id_categories", "name_categories", "status", "is_visible")
+	list_editable = ("status", "is_visible")
+	list_filter = ("status", "is_visible")
 	search_fields = ("name_categories",)
 	ordering = ("-id_categories",)
-	list_display_links = ("display_id",)
+	list_display_links = ("id_categories",)
 	field_labels = {
 		"id_categories": "ID danh mục",
 		"name_categories": "Tên danh mục",
+		"status": "Trạng thái",
+		"is_visible": "Hiển thị",
 	}
+	actions = ("activate_categories", "deactivate_categories", "show_categories", "hide_categories")
 	verbose_name = "Danh mục"
 	verbose_name_plural = "Danh mục"
 
-	@admin.display(description="ID", ordering="id_categories")
-	def display_id(self, obj):
-		return obj.id_categories
+	def _category_has_products(self, obj):
+		return Product.objects.filter(id_categories_id=obj.id_categories).exists()
 
-	@admin.display(description="Tên danh mục", ordering="name_categories")
-	def display_name(self, obj):
-		return obj.name_categories
+	@admin.action(description="Kích hoạt danh mục")
+	def activate_categories(self, request, queryset):
+		updated = queryset.update(status=1)
+		self.message_user(request, f"Đã kích hoạt {updated} danh mục.", level=messages.SUCCESS)
+
+	@admin.action(description="Ngừng hoạt động danh mục")
+	def deactivate_categories(self, request, queryset):
+		updated = queryset.update(status=0)
+		self.message_user(request, f"Đã ngừng hoạt động {updated} danh mục.", level=messages.SUCCESS)
+
+	@admin.action(description="Hiển thị danh mục")
+	def show_categories(self, request, queryset):
+		updated = queryset.update(is_visible=True)
+		self.message_user(request, f"Đã hiển thị {updated} danh mục.", level=messages.SUCCESS)
+
+	@admin.action(description="Ẩn danh mục")
+	def hide_categories(self, request, queryset):
+		updated = queryset.update(is_visible=False)
+		self.message_user(request, f"Đã ẩn {updated} danh mục.", level=messages.SUCCESS)
+
+	def delete_model(self, request, obj):
+		if self._category_has_products(obj):
+			if obj.status != 0 or obj.is_visible:
+				obj.status = 0
+				obj.is_visible = False
+				obj.save(update_fields=["status", "is_visible"])
+			self.message_user(
+				request,
+				"Danh mục đã có sản phẩm nên được chuyển sang trạng thái ngừng hoạt động và ẩn thay vì xóa.",
+				level=messages.WARNING,
+			)
+			return
+		super().delete_model(request, obj)
+
+	def delete_queryset(self, request, queryset):
+		category_ids = list(queryset.values_list("id_categories", flat=True))
+		if not category_ids:
+			return
+
+		categories_with_products = set(
+			Product.objects.filter(id_categories_id__in=category_ids).values_list("id_categories_id", flat=True)
+		)
+		if categories_with_products:
+			queryset.filter(id_categories__in=categories_with_products).update(status=0, is_visible=False)
+			self.message_user(
+				request,
+				"Một số danh mục đã có sản phẩm nên được chuyển sang trạng thái ngừng hoạt động và ẩn thay vì xóa.",
+				level=messages.WARNING,
+			)
+
+		queryset.exclude(id_categories__in=categories_with_products).delete()
 
 
 @admin.register(Product)
 class ProductAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 	inlines = [ProductImageInline, ProductPromotionInline]
-	fields = ("name_products", "brand", "price", "stock", "description", "id_categories")
+	fields = ("name_products", "brand", "price", "stock", "description", "id_categories", "status")
 	list_display = (
 		"display_id",
 		"display_name",
@@ -635,10 +739,12 @@ class ProductAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		"display_price",
 		"display_stock",
 		"display_category",
+		"status",
 		"display_promotion_codes",
 	)
+	list_editable = ("status",)
 	search_fields = ("name_products", "brand", "description")
-	list_filter = ("id_categories", "brand")
+	list_filter = ("id_categories", "brand", "status")
 	list_select_related = ("id_categories",)
 	ordering = ("-id_products",)
 	list_display_links = ("display_id",)
@@ -651,9 +757,31 @@ class ProductAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		"discount_price": "Giá giảm",
 		"stock": "Tồn kho",
 		"id_categories": "Danh mục",
+		"status": "Trạng thái",
 	}
 	verbose_name = "Sản phẩm"
 	verbose_name_plural = "Sản phẩm"
+
+	def _product_has_order_items(self, product_obj):
+		return OrderItem.objects.filter(id_products_id=product_obj.id_products).exists()
+
+	def _product_has_cart_items(self, product_obj):
+		return CartItem.objects.filter(id_products_id=product_obj.id_products).exists()
+
+	def _archive_product(self, product_obj, reason, request):
+		updated_fields = []
+		if product_obj.status != "Ngừng kinh doanh":
+			product_obj.status = "Ngừng kinh doanh"
+			updated_fields.append("status")
+
+		if updated_fields:
+			product_obj.save(update_fields=updated_fields)
+
+		self.message_user(
+			request,
+			reason,
+			level=messages.WARNING,
+		)
 
 	@admin.display(description="ID", ordering="id_products")
 	def display_id(self, obj):
@@ -679,9 +807,54 @@ class ProductAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 	def display_category(self, obj):
 		return obj.id_categories
 
+	@admin.display(description="Trạng thái", ordering="status")
+	def display_status(self, obj):
+		colors = {
+			"Đang kinh doanh": "#28a745",
+			"Ngừng kinh doanh": "#dc3545",
+		}
+		color = colors.get(obj.status, "#6c757d")
+		return format_html(
+			'<span style="color: white; background-color: {}; padding: 3px 10px; border-radius: 3px; font-weight: bold;">{}</span>',
+			color,
+			obj.status
+		)
+
 	def get_queryset(self, request):
 		queryset = super().get_queryset(request)
 		return queryset.prefetch_related("promotionproduct_set__id_promotions")
+
+	def delete_model(self, request, obj):
+		if self._product_has_order_items(obj) or self._product_has_cart_items(obj):
+			self._archive_product(
+				obj,
+				"Sản phẩm đã phát sinh trong đơn hàng/giỏ hàng nên được chuyển sang trạng thái ngừng kinh doanh thay vì xóa.",
+				request,
+			)
+			return
+		super().delete_model(request, obj)
+
+	def delete_queryset(self, request, queryset):
+		product_ids = list(queryset.values_list("id_products", flat=True))
+		if not product_ids:
+			return
+
+		referenced_product_ids = set(
+			OrderItem.objects.filter(id_products_id__in=product_ids).values_list("id_products_id", flat=True)
+		)
+		referenced_product_ids.update(
+			CartItem.objects.filter(id_products_id__in=product_ids).values_list("id_products_id", flat=True)
+		)
+
+		if referenced_product_ids:
+			queryset.filter(id_products__in=referenced_product_ids).update(status="Ngừng kinh doanh")
+			self.message_user(
+				request,
+				"Một số sản phẩm đã có trong đơn hàng/giỏ hàng nên được chuyển sang trạng thái ngừng kinh doanh thay vì xóa.",
+				level=messages.WARNING,
+			)
+
+		queryset.exclude(id_products__in=referenced_product_ids).delete()
 
 	@admin.display(description="Mã giảm giá áp dụng")
 	def display_promotion_codes(self, obj):
@@ -718,10 +891,11 @@ class DiscountAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		"display_discount_type",
 		"display_discount_value",
 		"display_apply_type",
-		"display_status",
+		"status",
 		"display_start_date",
 		"display_end_date",
 	)
+	list_editable = ("status",)
 	search_fields = ("name",)
 	list_filter = ("discount_type", "apply_type", "status")
 	ordering = ("-id_discounts",)
@@ -794,10 +968,11 @@ class PromotionAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		"display_code",
 		"display_discount_type",
 		"display_discount_value",
-		"display_status",
+		"status",
 		"display_start_date",
 		"display_end_date",
 	)
+	list_editable = ("status",)
 	search_fields = ("code",)
 	list_filter = ("discount_type", "status")
 	ordering = ("-id_promotions",)
@@ -972,6 +1147,15 @@ class OrderAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 		# Trang quản lý đơn hàng không cho tạo mới trực tiếp từ admin.
 		return False
 
+	def has_delete_permission(self, request, obj=None):
+		# Không cho xoá đơn hàng trong admin, kể cả khi đã huỷ/hoàn thành.
+		return False
+
+	def get_actions(self, request):
+		actions = super().get_actions(request)
+		actions.pop("delete_selected", None)
+		return actions
+
 	def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
 		extra_context = extra_context or {}
 		extra_context.update(
@@ -1042,14 +1226,8 @@ class OrderAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 
 	created_display.short_description = "Ngày tạo đơn hàng"
 
-	def get_changelist_form(self, request, **kwargs):
-		"""Dung cung form voi trang detail de ap quy tac chuyen trang thai 1 chieu."""
-		defaults = {"form": OrderAdminForm, "fields": self.list_editable}
-		defaults.update(kwargs)
-		return modelform_factory(self.model, **defaults)
-	
 	def save_model(self, request, obj, form, change):
-		"""Override để validate status transition khi save từ list_editable."""
+		"""Override để validate status transition khi lưu từ trang chi tiết."""
 		if change and "status_orders" in form.changed_data:
 			# Reload object từ database để lấy status cũ
 			original = Order.objects.get(pk=obj.pk)
@@ -1066,6 +1244,17 @@ class OrderAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 					f"sang '{STATUS_LABELS.get(new_status, new_status)}'."
 				)
 				return
+			
+			# Nếu chuyển sang "cancelled" thì hoàn lại kho
+			if new_status == "cancelled" and old_status != "cancelled":
+				from django.db import transaction
+				with transaction.atomic():
+					order_items = OrderItem.objects.filter(id_orders_id=obj.id_orders)
+					for item in order_items:
+						product = item.id_products
+						if product:
+							product.stock = (product.stock or 0) + item.quantity_order_items
+							product.save(update_fields=["stock"])
 		
 		super().save_model(request, obj, form, change)
 
@@ -1143,6 +1332,18 @@ class SearchHistoryAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 	@admin.display(description="Thời gian", ordering="created_at_search_history")
 	def display_created_at(self, obj):
 		return obj.created_at_search_history
+
+
+@admin.register(Review)
+class ReviewAdmin(VietnameseAdminMixin, admin.ModelAdmin):
+	list_display = ("id_reviews", "id_users", "id_products", "rating", "status", "created_at_reviews")
+	list_editable = ("status",)
+	search_fields = ("id_users__name_users", "id_users__email", "id_products__name_products", "comment")
+	list_filter = ("status", "rating", "created_at_reviews")
+	list_select_related = ("id_users", "id_products")
+	ordering = ("-created_at_reviews", "-id_reviews")
+	fields = ("id_users", "id_products", "rating", "comment", "status", "created_at_reviews")
+	readonly_fields = ("created_at_reviews",)
 
 
 @admin.register(UserAddress)

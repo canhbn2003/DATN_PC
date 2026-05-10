@@ -38,6 +38,11 @@
                     <i class="bi bi-pc-display"></i>
                     <span>Build PC</span>
                 </a>
+                <button type="button" class="tool-item notify-trigger" data-notify-trigger aria-label="Thông báo">
+                    <i class="bi bi-bell"></i>
+                    {% comment %} <span>Thông báo</span> {% endcomment %}
+                    <span class="notify-badge" data-notify-badge>0</span>
+                </button>
                 {% if logged_in_user_name %}
                 <div class="auth-user-menu" data-user-menu>
                     <button type="button" class="tool-item auth-user-trigger" data-user-trigger>
@@ -73,6 +78,14 @@
             <div class="category-menu-wrap" data-nav-catalog>
                 <button class="category-toggle" type="button"><i class="bi bi-list"></i> DANH MỤC SẢN PHẨM</button>
                 <div class="category-dropdown-menu">
+                    <div class="category-item-wrap">
+                        <a href="/products/all/" class="category-item">
+                            <span class="category-item-left">
+                                <i class="bi bi-grid-3x3-gap"></i>
+                                <span>Tất cả sản phẩm</span>
+                            </span>
+                        </a>
+                    </div>
                     {% for category in categories %}
                         <div class="category-item-wrap">
                             <a href="/?category={{ category.id_categories }}" class="category-item">
@@ -131,6 +144,28 @@
 
     </div>
 </header>
+
+<div class="notify-shell" data-notify-shell>
+    <div class="notify-panel-overlay" data-notify-overlay hidden></div>
+    <aside class="notify-panel" data-notify-panel aria-hidden="true">
+        <div class="notify-panel-head">
+            <div>
+                <h4>Thông báo</h4>
+                <p data-notify-subtitle>Cập nhật mới nhất dành cho bạn</p>
+            </div>
+            <div class="notify-panel-actions">
+                {% comment %} <button type="button" class="notify-mark-all" data-notify-mark-all>Đánh dấu tất cả đã đọc</button> {% endcomment %}
+                <button type="button" class="notify-close" data-notify-close aria-label="Đóng">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+        </div>
+        <div class="notify-panel-body">
+            <div class="notify-list" data-notify-list></div>
+            <div class="notify-empty" data-notify-empty hidden>Chưa có thông báo nào.</div>
+        </div>
+    </aside>
+</div>
 
 
 
@@ -301,6 +336,323 @@
     badges.forEach((badge) => {
         badge.textContent = String(count);
         badge.style.display = count > 0 ? "inline-flex" : "none";
+    });
+})();
+
+(function () {
+    const header = document.querySelector(".shop-header");
+    const trigger = document.querySelector("[data-notify-trigger]");
+    const overlay = document.querySelector("[data-notify-overlay]");
+    const panel = document.querySelector("[data-notify-panel]");
+    const listEl = document.querySelector("[data-notify-list]");
+    const emptyEl = document.querySelector("[data-notify-empty]");
+    const badgeEl = document.querySelector("[data-notify-badge]");
+    const markAllBtn = document.querySelector("[data-notify-mark-all]");
+    const closeBtn = document.querySelector("[data-notify-close]");
+
+    if (!trigger || !panel || !overlay || !listEl || !badgeEl) return;
+
+    const MARK_READ_ON_OPEN = true;
+    const NOTIFY_API = "/api/notifications/";
+    const POLL_INTERVAL_MS = 1000;
+    const userId = Number.parseInt(header?.dataset.userId || "", 10);
+    const userKey = Number.isFinite(userId) && userId > 0 ? userId : "guest";
+    const storageKey = `pcai_notify_read_${userKey}`;
+    const saleGateKey = `pcai_notify_sale_gate_${userKey}`;
+
+    let notifications = [];
+    let readIds = new Set();
+    let isOpen = false;
+    let isLoading = false;
+
+    const escapeHtml = (value) => {
+        return String(value || "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;")
+            .replaceAll("'", "&#39;");
+    };
+
+    const formatTime = (isoString) => {
+        if (!isoString) return "";
+        const dateObj = new Date(isoString);
+        if (Number.isNaN(dateObj.getTime())) return "";
+        return dateObj.toLocaleString("vi-VN", {
+            day: "2-digit",
+            month: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+        });
+    };
+
+    const getCreatedAt = (item) => {
+        return item.createdAt || item.CreatedAt || item.time || "";
+    };
+
+    const isFreshNotification = (item) => {
+        const createdAt = getCreatedAt(item);
+        if (!createdAt) return false;
+        const createdTime = new Date(createdAt).getTime();
+        if (!createdTime) return false;
+        const diffMs = Date.now() - createdTime;
+        return diffMs >= 0 && diffMs <= 30 * 60 * 1000;
+    };
+
+    const getTodayKey = () => {
+        const now = new Date();
+        const month = String(now.getMonth() + 1).padStart(2, "0");
+        const day = String(now.getDate()).padStart(2, "0");
+        return `${now.getFullYear()}-${month}-${day}`;
+    };
+
+    const loadSaleGateState = () => {
+        try {
+            const raw = localStorage.getItem(saleGateKey);
+            if (!raw) return { date: "", bestScore: 0 };
+            const parsed = JSON.parse(raw);
+            return {
+                date: String(parsed?.date || ""),
+                bestScore: Number(parsed?.bestScore || 0) || 0,
+            };
+        } catch (error) {
+            return { date: "", bestScore: 0 };
+        }
+    };
+
+    const saveSaleGateState = (state) => {
+        try {
+            localStorage.setItem(saleGateKey, JSON.stringify(state));
+        } catch (error) {
+            // Ignore storage failures.
+        }
+    };
+
+    const applySaleGate = (items) => {
+        const todayKey = getTodayKey();
+        const gateState = loadSaleGateState();
+        let bestScore = gateState.date === todayKey ? gateState.bestScore : 0;
+        let hasUpdate = false;
+
+        const filtered = items.filter((item) => {
+            const type = (item.type || item.Type || "").toLowerCase();
+            if (type !== "sale") return true;
+
+            const scoreRaw = item.saleScore ?? item.sale_score ?? item.saleScoreValue;
+            const score = Number(scoreRaw || 0) || 0;
+            if (gateState.date === todayKey && score <= bestScore) {
+                return false;
+            }
+
+            bestScore = Math.max(bestScore, score);
+            hasUpdate = true;
+            return true;
+        });
+
+        if (hasUpdate || gateState.date !== todayKey) {
+            saveSaleGateState({ date: todayKey, bestScore });
+        }
+
+        return filtered;
+    };
+
+    const loadReadState = () => {
+        try {
+            const raw = localStorage.getItem(storageKey);
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed)) {
+                readIds = new Set(parsed.filter(Boolean));
+            }
+        } catch (error) {
+            readIds = new Set();
+        }
+    };
+
+    const saveReadState = () => {
+        try {
+            localStorage.setItem(storageKey, JSON.stringify(Array.from(readIds)));
+        } catch (error) {
+            // Ignore storage failures.
+        }
+    };
+
+    const updateBadge = () => {
+        const unreadCount = notifications.filter((item) => !readIds.has(item.id)).length;
+        badgeEl.textContent = String(unreadCount);
+        badgeEl.style.display = unreadCount > 0 ? "inline-flex" : "none";
+        trigger.classList.toggle("notify-has-unread", unreadCount > 0);
+    };
+
+    const renderNotifications = () => {
+        if (!notifications.length) {
+            listEl.innerHTML = "";
+            emptyEl.removeAttribute("hidden");
+            updateBadge();
+            return;
+        }
+
+        emptyEl.setAttribute("hidden", "hidden");
+        const rows = notifications
+            .map((item) => {
+                const isRead = readIds.has(item.id);
+                const isFresh = isFreshNotification(item);
+                const type = (item.type || "general").toLowerCase();
+                const typeLabel =
+                    type === "promotion"
+                        ? "Khuyến mãi"
+                        : type === "sale"
+                        ? "Sale"
+                        : type === "order"
+                        ? "Đơn hàng"
+                        : "Cập nhật";
+                const typeIcon =
+                    type === "promotion"
+                        ? "bi-ticket-perforated"
+                        : type === "sale"
+                        ? "bi-fire"
+                        : type === "order"
+                        ? "bi-bag-check"
+                        : "bi-bell";
+                const link = item.targetUrl || item.TargetUrl || item.link || "#";
+                const createdAtValue = getCreatedAt(item);
+                return `
+                    <a class="notify-item ${isRead ? "is-read" : "is-unread"} ${isFresh ? "is-new" : ""}" href="${escapeHtml(link)}" data-notify-id="${escapeHtml(item.id)}">
+                        <div class="notify-item-icon notify-type-${escapeHtml(type)}">
+                            <i class="bi ${typeIcon}"></i>
+                        </div>
+                        <div class="notify-item-content">
+                            <div class="notify-item-title">${escapeHtml(item.title)}</div>
+                            <div class="notify-item-message">${escapeHtml(item.message)}</div>
+                            <div class="notify-item-meta">
+                                <span class="notify-item-time">${escapeHtml(formatTime(createdAtValue))}</span>
+                                <span class="notify-item-type">${escapeHtml(typeLabel)}</span>
+                                ${isFresh ? '<span class="notify-item-tag">Mới</span>' : ""}
+                            </div>
+                        </div>
+                    </a>
+                `;
+            })
+            .join("");
+
+        listEl.innerHTML = rows;
+        updateBadge();
+    };
+
+    const markAllRead = () => {
+        notifications.forEach((item) => readIds.add(item.id));
+        saveReadState();
+        renderNotifications();
+    };
+
+    const markOneRead = (id) => {
+        if (!id) return;
+        readIds.add(id);
+        saveReadState();
+        updateBadge();
+        const target = listEl.querySelector(`[data-notify-id="${CSS.escape(id)}"]`);
+        if (target) {
+            target.classList.remove("is-unread");
+            target.classList.add("is-read");
+        }
+    };
+
+    const fetchNotifications = async () => {
+        if (isLoading) return;
+        isLoading = true;
+        try {
+            const response = await fetch(`${NOTIFY_API}?_t=${Date.now()}`, {
+                headers: { "Content-Type": "application/json" },
+                cache: "no-store",
+            });
+            if (!response.ok) throw new Error("Failed");
+            const payload = await response.json();
+            const rawItems = Array.isArray(payload.items) ? payload.items : [];
+            const filteredItems = applySaleGate(rawItems);
+            notifications = filteredItems.sort((a, b) => {
+                const timeA = new Date(getCreatedAt(a)).getTime() || 0;
+                const timeB = new Date(getCreatedAt(b)).getTime() || 0;
+                return timeB - timeA;
+            });
+            renderNotifications();
+        } catch (error) {
+            notifications = [];
+            renderNotifications();
+        } finally {
+            isLoading = false;
+        }
+    };
+
+    const openPanel = () => {
+        if (isOpen) return;
+        isOpen = true;
+        document.body.classList.add("notify-open");
+        panel.setAttribute("aria-hidden", "false");
+        overlay.removeAttribute("hidden");
+        fetchNotifications();
+
+        if (MARK_READ_ON_OPEN) {
+            window.setTimeout(() => {
+                markAllRead();
+            }, 800);
+        }
+    };
+
+    const closePanel = () => {
+        if (!isOpen) return;
+        isOpen = false;
+        document.body.classList.remove("notify-open");
+        panel.setAttribute("aria-hidden", "true");
+        overlay.setAttribute("hidden", "hidden");
+    };
+
+    let pollTimer = null;
+    const startPolling = () => {
+        if (pollTimer) return;
+        pollTimer = window.setInterval(() => {
+            if (!document.hidden) {
+                fetchNotifications();
+            }
+        }, POLL_INTERVAL_MS);
+    };
+
+    loadReadState();
+    fetchNotifications();
+    startPolling();
+
+    trigger.addEventListener("click", () => {
+        if (isOpen) {
+            closePanel();
+        } else {
+            openPanel();
+        }
+    });
+
+    overlay.addEventListener("click", closePanel);
+    closeBtn?.addEventListener("click", closePanel);
+    markAllBtn?.addEventListener("click", (event) => {
+        event.preventDefault();
+        markAllRead();
+    });
+
+    listEl.addEventListener("click", (event) => {
+        const target = event.target.closest("[data-notify-id]");
+        if (!target) return;
+        const id = target.dataset.notifyId || "";
+        markOneRead(id);
+        closePanel();
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && isOpen) {
+            closePanel();
+        }
+    });
+
+    document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+            fetchNotifications();
+        }
     });
 })();
 

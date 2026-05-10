@@ -10,6 +10,11 @@ class User(models.Model):
         ('admin', 'Quản trị viên'),
     ]
 
+    STATUS_CHOICES = [
+        (1, 'Đang hoạt động'),
+        (0, 'Ngừng hoạt động'),
+    ]
+
     id_users = models.AutoField(primary_key=True)
     name_users = models.CharField(max_length=100)
     email = models.CharField(max_length=100, unique=True)
@@ -18,6 +23,7 @@ class User(models.Model):
     gender_users = models.CharField(max_length=10, null=True, blank=True)
     phone_users = models.CharField(max_length=20, null=True, blank=True)
     address_users = models.CharField(max_length=255, null=True, blank=True)
+    status = models.IntegerField(default=1, choices=STATUS_CHOICES)
     created_at_users = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -93,8 +99,15 @@ class WebsiteSettings(models.Model):
 # CATEGORIES
 # =========================
 class Category(models.Model):
+    STATUS_CHOICES = [
+        (1, 'Đang hoạt động'),
+        (0, 'Ngừng hoạt động'),
+    ]
+
     id_categories = models.AutoField(primary_key=True)
     name_categories = models.CharField(max_length=100)
+    status = models.IntegerField(default=1, choices=STATUS_CHOICES)
+    is_visible = models.BooleanField(default=True)
 
     class Meta:
         managed = False
@@ -110,6 +123,11 @@ class Category(models.Model):
 # PRODUCTS
 # =========================
 class Product(models.Model):
+    STATUS_CHOICES = [
+        ('Đang kinh doanh', 'Đang kinh doanh'),
+        ('Ngừng kinh doanh', 'Ngừng kinh doanh'),
+    ]
+
     id_products = models.AutoField(primary_key=True)
     name_products = models.CharField(max_length=200)
     brand = models.CharField(max_length=100, null=True, blank=True)
@@ -117,6 +135,11 @@ class Product(models.Model):
     stock = models.IntegerField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
     created_at_products = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(
+        max_length=50,
+        choices=STATUS_CHOICES,
+        default='Đang kinh doanh'
+    )
 
     id_categories = models.ForeignKey(
         Category,
@@ -134,6 +157,16 @@ class Product(models.Model):
 
     def __str__(self):
         return self.name_products
+
+    @property
+    def is_discontinued(self):
+        """Check if product is discontinued"""
+        return self.status == 'Ngừng kinh doanh'
+
+    @property
+    def is_active(self):
+        """Check if product is active"""
+        return self.status == 'Đang kinh doanh'
 
 
 # =========================
@@ -510,6 +543,43 @@ class UserPromotion(models.Model):
                 name="UQ_user_promotion",
             )
         ]
+
+
+class Review(models.Model):
+    STATUS_CHOICES = [
+        ("Hiển thị", "Hiển thị"),
+        ("Ẩn", "Ẩn"),
+    ]
+
+    id_reviews = models.AutoField(primary_key=True)
+
+    id_users = models.ForeignKey(
+        User,
+        models.CASCADE,
+        db_column="id_users",
+        related_name="reviews",
+    )
+
+    id_products = models.ForeignKey(
+        Product,
+        models.CASCADE,
+        db_column="id_products",
+        related_name="reviews",
+    )
+
+    rating = models.IntegerField()
+    comment = models.TextField(null=True, blank=True)
+    created_at_reviews = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=50, choices=STATUS_CHOICES, default="Hiển thị")
+
+    class Meta:
+        managed = False
+        db_table = "reviews"
+        verbose_name = "Đánh giá"
+        verbose_name_plural = "Đánh giá"
+
+    def __str__(self):
+        return f"{self.id_users.name_users} - {self.id_products.name_products} ({self.rating} sao)"
 
 
 class UserItemScore(models.Model):

@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import os
 import re
+from dataclasses import dataclass
 from decimal import Decimal
 import requests
 from urllib.parse import urlparse
@@ -12,10 +13,11 @@ from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.hashers import check_password, make_password
 from django.db import IntegrityError, transaction
-from django.db.models import Exists, F, OuterRef, Q, Sum
+from django.db.models import Avg, Count, Exists, F, OuterRef, Q, Sum
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse, Http404
 from django.shortcuts import redirect, render
+from django.core.paginator import Paginator
 from django.utils import timezone
 from django.template.loader import render_to_string
 from django.views.decorators.http import require_GET, require_POST, require_http_methods
@@ -32,6 +34,7 @@ from .models import (
     OrderItem,
     Product,
     ProductImage,
+    Review,
     Promotion,
     PromotionProduct,
     SearchHistory,
@@ -44,6 +47,7 @@ from .models import (
 from django.views.decorators.csrf import csrf_exempt
 from django.core.mail import send_mail
 import random
+
 # Xử lý gửi OTP khi quên mật khẩu
 @require_POST
 @csrf_exempt
@@ -102,9 +106,7 @@ ORDER_CANCEL_REASONS = [
 ]
 
 VNPAY_PENDING_PAYMENT_KEY = "vnpay_pending_payment"
-GEMINI_CHAT_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent"
-
-
+GEMINI_CHAT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
 PRICE_RANGES = (
     ("duoi-5", "Duoi 5 trieu", Decimal("0"), Decimal("5000000")),
     ("5-10", "Tu 5 - 10 trieu", Decimal("5000000"), Decimal("10000000")),
@@ -214,7 +216,7 @@ def reset_password(request):
     try:
         user = User.objects.get(email=email)
         user.password = make_password(new_password)
-        user.save()
+        user.save(update_fields=["password"])
         # Xoá session liên quan đến reset password
         for key in ['reset_password_otp', 'reset_password_email', 'otp_verified']:
             if key in request.session:
@@ -356,6 +358,7 @@ def _get_product_pricing(product, discount_context=None):
         "discount_name": best_discount.name if best_discount else "",
         "discount_type": best_discount.discount_type if best_discount else "",
         "discount_value": best_discount.discount_value if best_discount else Decimal("0"),
+        "discount_start_date": best_discount.start_date if best_discount else None,
     }
 
 
@@ -389,6 +392,64 @@ def _build_promotion_context():
 
     return {
         "promotions_by_code": promotions_by_code,
+        "promotion_product_map": promotion_product_map,
+    }
+
+
+def _build_promotion_context_with_upcoming():
+    """
+    Fetch both active and upcoming promotions.
+    Returns active and upcoming promotions separately for display.
+    """
+    now = timezone.now()
+    
+    # Fetch active promotions
+    active_promotions = list(
+        Promotion.objects.filter(
+            status=True,
+            start_date__lte=now,
+            end_date__gte=now,
+            used_count__lt=F("usage_limit"),
+        )
+    )
+    
+    # Fetch upcoming promotions (not yet started)
+    upcoming_promotions = list(
+        Promotion.objects.filter(
+            status=True,
+            start_date__gt=now,
+        )
+    )
+    
+    # Combine all promotions for building the product map
+    all_promotions = active_promotions + upcoming_promotions
+    all_promotions_list = list(all_promotions)
+    
+    if not all_promotions_list:
+        return {
+            "active_promotions_by_code": {},
+            "upcoming_promotions_by_code": {},
+            "promotion_product_map": {},
+        }
+    
+    # Build mappings
+    active_promotions_by_code = {item.code.upper(): item for item in active_promotions}
+    upcoming_promotions_by_code = {item.code.upper(): item for item in upcoming_promotions}
+    
+    promotion_ids = [item.id_promotions for item in all_promotions_list]
+    
+    promotion_product_map = {}
+    rows = PromotionProduct.objects.filter(id_promotions_id__in=promotion_ids).values_list(
+        "id_promotions_id",
+        "id_products_id",
+    )
+    for promotion_id, product_id in rows:
+        promotion_product_map.setdefault(promotion_id, set()).add(product_id)
+    
+    return {
+        "active_promotions_by_code": active_promotions_by_code,
+        "upcoming_promotions_by_code": upcoming_promotions_by_code,
+        "promotions_by_code": active_promotions_by_code,  # Keep for backward compatibility
         "promotion_product_map": promotion_product_map,
     }
 
@@ -600,9 +661,23 @@ def _build_promotion_card_data(promotion, promotion_context, saved_codes=None, c
     return card_data
 
 
+def _get_public_categories_queryset():
+    return Category.objects.filter(status=1, is_visible=True)
+
+
+def _get_public_products_queryset():
+    # Public queryset: includes products whose category is active/visible.
+    # Do NOT filter by product.status here so discontinued products remain visible
+    # in lists/pages/detail/cart. Recommender code will explicitly exclude discontinued products.
+    return Product.objects.select_related("id_categories").prefetch_related("images").filter(
+        id_categories__status=1,
+        id_categories__is_visible=True,
+    )
+
+
 @require_http_methods(["GET", "POST"])
 def flash_sale_page(request):
-    promotion_context = _build_promotion_context()
+    promotion_context = _build_promotion_context_with_upcoming()
     saved_codes = _get_saved_promotion_codes(request)
 
     if request.method == "POST":
@@ -613,7 +688,12 @@ def flash_sale_page(request):
             messages.error(request, "Vui lòng chọn mã giảm giá")
             return redirect("flash_sale_page")
 
-        promotion = promotion_context["promotions_by_code"].get(code)
+        # Check both active and upcoming promotions
+        promotion = (
+            promotion_context["active_promotions_by_code"].get(code)
+            or promotion_context["upcoming_promotions_by_code"].get(code)
+        )
+        
         if not promotion:
             messages.error(request, f"Mã {code} không hợp lệ hoặc đã hết hạn")
             return redirect("flash_sale_page")
@@ -633,18 +713,30 @@ def flash_sale_page(request):
 
         return redirect("flash_sale_page")
 
-    promotions = [
+    # Build active promotion cards
+    active_promotions = [
         _build_promotion_card_data(promotion, promotion_context, saved_codes=saved_codes)
         for promotion in sorted(
-            promotion_context["promotions_by_code"].values(),
+            promotion_context["active_promotions_by_code"].values(),
             key=lambda item: (item.end_date, item.id_promotions),
+        )
+    ]
+    
+    # Build upcoming promotion cards
+    upcoming_promotions = [
+        _build_promotion_card_data(promotion, promotion_context, saved_codes=saved_codes)
+        for promotion in sorted(
+            promotion_context["upcoming_promotions_by_code"].values(),
+            key=lambda item: (item.start_date, item.id_promotions),
         )
     ]
 
     context = _common_page_context(request)
     context.update(
         {
-            "promotions": promotions,
+            "promotions": active_promotions,  # Keep for backward compatibility
+            "active_promotions": active_promotions,
+            "upcoming_promotions": upcoming_promotions,
             "saved_promotion_codes": saved_codes,
             "saved_promotion_count": len(saved_codes),
         }
@@ -653,13 +745,13 @@ def flash_sale_page(request):
 
 
 def _common_page_context(request):
-    categories = list(Category.objects.all().order_by("name_categories")[:10])
+    categories = list(_get_public_categories_queryset().order_by("name_categories")[:10])
     category_ids = [item.id_categories for item in categories]
 
     brand_map = {category_id: [] for category_id in category_ids}
     if category_ids:
         brand_rows = (
-            Product.objects.filter(id_categories_id__in=category_ids)
+            _get_public_products_queryset().filter(id_categories_id__in=category_ids)
             .exclude(Q(brand__isnull=True) | Q(brand__exact=""))
             .values_list("id_categories_id", "brand")
             .distinct()
@@ -815,6 +907,159 @@ def _common_page_context(request):
     }
 
 
+def _format_notification_timestamp(dt_value):
+    if not dt_value:
+        return ""
+
+    try:
+        return timezone.localtime(dt_value).isoformat()
+    except (TypeError, ValueError):
+        return ""
+
+
+@dataclass
+class NotificationViewModel:
+    id: str
+    title: str
+    message: str
+    type: str
+    target_url: str
+    created_at: object
+    sale_score: float | None = None
+    sale_price: float | None = None
+
+    def to_payload(self):
+        created_at_iso = _format_notification_timestamp(self.created_at)
+        payload = {
+            "Id": self.id,
+            "Title": self.title,
+            "Message": self.message,
+            "Type": self.type,
+            "TargetUrl": self.target_url,
+            "CreatedAt": created_at_iso,
+            "id": self.id,
+            "title": self.title,
+            "message": self.message,
+            "type": self.type,
+            "targetUrl": self.target_url,
+            "createdAt": created_at_iso,
+            "link": self.target_url,
+            "time": created_at_iso,
+        }
+
+        if self.sale_score is not None:
+            payload["saleScore"] = self.sale_score
+        if self.sale_price is not None:
+            payload["salePrice"] = self.sale_price
+
+        return payload
+
+
+def _build_notification_items(request, limit=20):
+    now = timezone.now()
+    notifications: list[NotificationViewModel] = []
+
+    active_promotions = (
+        Promotion.objects.filter(
+            status=True,
+            start_date__lte=now,
+            end_date__gte=now,
+            used_count__lt=F("usage_limit"),
+        )
+        .order_by("-start_date", "-id_promotions")[:6]
+    )
+
+    for promotion in active_promotions:
+        notifications.append(
+            NotificationViewModel(
+                id=f"promotion-{promotion.id_promotions}",
+                title=f"Mã giảm giá mới: {promotion.code}",
+                message=_format_promotion_text(promotion),
+                type="promotion",
+                target_url="/flash-sale/",
+                created_at=promotion.start_date or promotion.created_at or now,
+            )
+        )
+
+    hot_sale_products = _get_hot_sale_products(limit=4)
+    for product in hot_sale_products:
+        discount_badge = getattr(product, "discount_badge", "")
+        discount_name = getattr(product, "discount_name", "")
+        message_parts = [part for part in [discount_badge, discount_name] if part]
+        sale_score = None
+        if getattr(product, "discount_type", "") == "percent":
+            sale_score = float(getattr(product, "discount_percentage", 0) or 0)
+        else:
+            sale_score = float(getattr(product, "discount_amount", 0) or 0)
+
+        created_at = (
+            getattr(product, "discount_start_date", None)
+            or getattr(product, "created_at_products", None)
+            or now
+        )
+
+        notifications.append(
+            NotificationViewModel(
+                id=f"sale-{product.id_products}",
+                title=f"Giá tốt hôm nay: {product.name_products}",
+                message=" · ".join(message_parts) or "Sản phẩm đang có giá tốt nhất.",
+                type="sale",
+                target_url=f"/products/{product.id_products}/",
+                created_at=created_at,
+                sale_score=sale_score,
+                sale_price=float(getattr(product, "final_price", 0) or 0),
+            )
+        )
+
+    user_id = request.session.get("logged_in_user_id")
+    if user_id:
+        order_rows = (
+            Order.objects.filter(id_users_id=user_id)
+            .order_by("-created_at_orders", "-id_orders")[:8]
+        )
+
+        status_titles = {
+            "pending": "Đặt hàng thành công",
+            "confirmed": "Đơn hàng đã được admin duyệt",
+            "shipping": "Đơn hàng đang được giao",
+            "completed": "Đơn hàng đã hoàn thành",
+            "cancelled": "Đơn hàng đã hủy",
+        }
+        status_messages = {
+            "pending": "Chúng tôi đã ghi nhận đơn hàng và sẽ xử lý sớm nhất.",
+            "confirmed": "Đơn hàng đã được duyệt và đang chuẩn bị giao.",
+            "shipping": "Đơn hàng đang trên đường đến bạn.",
+            "completed": "Cảm ơn bạn đã mua hàng tại cửa hàng.",
+            "cancelled": "Đơn hàng đã được hủy theo yêu cầu.",
+        }
+
+        for order in order_rows:
+            status_code = (order.status_orders or "pending").strip().lower()
+            status_timestamp = order.created_at_orders
+            if status_code != "pending":
+                status_timestamp = now
+            notifications.append(
+                NotificationViewModel(
+                    id=f"order-{order.id_orders}-{status_code}",
+                    title=status_titles.get(status_code, "Cập nhật đơn hàng"),
+                    message=status_messages.get(status_code, "Đơn hàng có cập nhật mới."),
+                    type="order",
+                    target_url=f"/api/orders/{order.id_orders}/",
+                    created_at=status_timestamp,
+                )
+            )
+
+    notifications.sort(key=lambda item: item.created_at or now, reverse=True)
+    trimmed = notifications[: max(1, int(limit or 20))]
+    return [item.to_payload() for item in trimmed]
+
+
+@require_GET
+def notifications_api(request):
+    items = _build_notification_items(request, limit=20)
+    return JsonResponse({"items": items})
+
+
 def _apply_search_filters(products_queryset, keyword, brand_filter="", price_range_code=""):
     if not keyword:
         filtered_queryset = products_queryset
@@ -847,6 +1092,51 @@ def _apply_search_filters(products_queryset, keyword, brand_filter="", price_ran
             filtered_queryset = filtered_queryset.filter(price__lt=max_price)
 
     return filtered_queryset
+
+
+def _apply_product_sorting(products_queryset, sort_code="best_selling"):
+    normalized = (sort_code or "").strip().lower()
+    if normalized == "price_asc":
+        return products_queryset.order_by("price", "-id_products")
+    if normalized == "price_desc":
+        return products_queryset.order_by("-price", "-id_products")
+    return products_queryset.order_by("-total_sold", "-id_products")
+
+
+def _user_has_completed_purchase(user_id, product_id):
+    if not user_id or not product_id:
+        return False
+
+    return OrderItem.objects.filter(
+        id_products_id=product_id,
+        id_orders__id_users_id=user_id,
+        id_orders__status_orders="completed",
+    ).exists()
+
+
+def _get_product_review_summary(product_id):
+    stats = Review.objects.filter(id_products_id=product_id, status="Hiển thị").aggregate(
+        avg_rating=Avg("rating"),
+        total_reviews=Count("id_reviews"),
+    )
+
+    avg_rating = float(stats.get("avg_rating") or 0)
+    total_reviews = int(stats.get("total_reviews") or 0)
+    star_count = min(5, max(0, int(round(avg_rating))))
+
+    return {
+        "avg_rating": round(avg_rating, 1),
+        "total_reviews": total_reviews,
+        "star_count": star_count,
+    }
+
+
+def _get_visible_product_reviews(product_id, limit=20):
+    return list(
+        Review.objects.select_related("id_users")
+        .filter(id_products_id=product_id, status="Hiển thị")
+        .order_by("-created_at_reviews", "-id_reviews")[: max(1, int(limit or 20))]
+    )
 
 
 def _save_search_history_for_logged_in_user(request, keyword):
@@ -1005,7 +1295,7 @@ def _build_ai_chat_data_context(question, limit=30):
     budget = _extract_ai_chat_budget(cleaned_question)
     intent = _extract_ai_chat_intent(cleaned_question)
 
-    products_qs = Product.objects.select_related("id_categories").prefetch_related("images")
+    products_qs = _get_public_products_queryset()
     if tokens:
         token_query = Q()
         for token in tokens:
@@ -1024,7 +1314,7 @@ def _build_ai_chat_data_context(question, limit=30):
 
     category_names = intent_category_rules.get(intent, intent_category_rules["balanced"])
     category_ids = list(
-        Category.objects.filter(name_categories__in=category_names).values_list("id_categories", flat=True)
+        _get_public_categories_queryset().filter(name_categories__in=category_names).values_list("id_categories", flat=True)
     )
     if category_ids:
         products_qs = products_qs.filter(id_categories_id__in=category_ids)
@@ -1045,8 +1335,7 @@ def _build_ai_chat_data_context(question, limit=30):
 
     if not products:
         products = list(
-            Product.objects.select_related("id_categories")
-            .prefetch_related("images")
+            _get_public_products_queryset()
             .order_by("-id_products")[:12]
         )
 
@@ -1077,7 +1366,7 @@ def _build_ai_chat_data_context(question, limit=30):
             )
         )
 
-    categories = list(Category.objects.order_by("name_categories").values_list("name_categories", flat=True))
+    categories = list(_get_public_categories_queryset().order_by("name_categories").values_list("name_categories", flat=True))
     categories_text = ", ".join([str(name).strip() for name in categories if str(name).strip()])
 
     return {
@@ -1095,8 +1384,7 @@ def _load_products_by_ordered_ids(product_ids):
 
     products_map = {
         item.id_products: item
-        for item in Product.objects.select_related("id_categories")
-        .prefetch_related("images")
+        for item in _get_public_products_queryset()
         .filter(id_products__in=product_ids)
     }
 
@@ -1204,6 +1492,8 @@ def _get_cart_items_from_database(user_id):
                 "image": _pick_primary_image(product) or "",
                 "price": float(pricing["final_price"]),
                 "quantity": quantity_map.get(product_id, 1),
+                "status": product.status,
+                "is_discontinued": getattr(product, "is_discontinued", False),
             }
         )
 
@@ -1328,6 +1618,8 @@ def _build_cart_items_with_pricing(cart_items_session):
                     "unit_final_price": unit_final_price,
                     "discount_name": pricing["discount_name"],
                     "has_discount": pricing["has_discount"],
+                    "status": product.status,
+                    "is_discontinued": product.is_discontinued,
                 },
                 "quantity": quantity,
                 "product_id": product.id_products,
@@ -1339,6 +1631,8 @@ def _build_cart_items_with_pricing(cart_items_session):
                 "display_subtotal": f"{line_after_product_discount:,.0f}",
                 "display_original_subtotal": f"{line_original:,.0f}",
                 "display_line_discount": f"{line_discount:,.0f}",
+                "status": product.status,
+                "is_discontinued": product.is_discontinued,
             }
         )
 
@@ -1374,16 +1668,23 @@ def _create_order_from_checkout_data(
         }
 
         stock_errors = []
+        discontinued_errors = []
         for product_id, required_qty in product_quantity_map.items():
             product = locked_products.get(product_id)
             if not product:
                 stock_errors.append(f"Sản phẩm #{product_id} không tồn tại")
+                continue
+            if product.is_discontinued:
+                discontinued_errors.append(f"{product.name_products}: sản phẩm đã ngừng kinh doanh")
                 continue
             if product.stock is None:
                 stock_errors.append(f"{product.name_products}: chưa khai báo tồn kho")
                 continue
             if product.stock < required_qty:
                 stock_errors.append(f"{product.name_products}: còn {product.stock}, cần {required_qty}")
+
+        if discontinued_errors:
+            return {"ok": False, "message": "Không thể đặt hàng do có sản phẩm đã ngừng kinh doanh: " + "; ".join(discontinued_errors)}
 
         if stock_errors:
             return {"ok": False, "message": "Không thể đặt hàng do tồn kho không đủ: " + "; ".join(stock_errors)}
@@ -1556,8 +1857,7 @@ def _get_hot_sale_products(limit=10):
     """Get products with highest discounts for hot sale section"""
     image_exists_subquery = ProductImage.objects.filter(id_products_id=OuterRef("id_products"))
     products_queryset = (
-        Product.objects.select_related("id_categories")
-        .prefetch_related("images")
+        _get_public_products_queryset()
         .annotate(has_image=Exists(image_exists_subquery))
     )
     
@@ -1571,12 +1871,15 @@ def _get_hot_sale_products(limit=10):
             product.id = product.id_products  # Add id for template
             product.primary_image_url = _pick_primary_image(product)
             product.display_price = f"{pricing['final_price']:,.0f}"
+            product.final_price = float(pricing["final_price"])
             product.old_price = f"{pricing['original_price']:,.0f}"
             product.discount_amount_display = f"{pricing['discount_amount']:,.0f}"
             product.has_discount = True
             product.discount_name = pricing["discount_name"]
+            product.discount_type = pricing["discount_type"]
             product.discount_percentage = pricing.get("discount_value", 0)
             product.discount_amount = pricing["discount_amount"]
+            product.discount_start_date = pricing.get("discount_start_date")
             
             if pricing["discount_type"] == "percent":
                 product.discount_badge = f"Giảm {pricing['discount_value']:,.0f}%"
@@ -1612,13 +1915,61 @@ def _format_product_cards(products):
             product.discount_badge = ""
 
 
+def _is_active_product(product):
+    try:
+        return getattr(product, "status", None) == "Đang kinh doanh"
+    except Exception:
+        return False
+
+
+def _filter_out_discontinued(products):
+    """Return only products that are not discontinued (active)."""
+    if not products:
+        return []
+    return [p for p in products if not getattr(p, "is_discontinued", False) and _is_active_product(p)]
+
+
 def _get_popular_products_for_recommendation(limit=8):
+    # Popular candidates for recommendations should only include active products
     products = list(
-        Product.objects.select_related("id_categories")
-        .prefetch_related("images")
+        _get_public_products_queryset()
+        .filter(status="Đang kinh doanh")
         .annotate(total_sold=Coalesce(Sum("orderitem__quantity_order_items"), 0))
         .order_by("-total_sold", "-id_products")[:limit]
     )
+    _format_product_cards(products)
+    return products
+
+
+def _get_best_selling_products(limit=24, offset=0, window_days=30, base_queryset=None):
+    now = timezone.now()
+    cutoff = now - timezone.timedelta(days=int(window_days or 30))
+    valid_statuses = ["pending", "confirmed", "shipping", "completed"]
+
+    queryset = base_queryset or _get_public_products_queryset()
+    queryset = queryset.annotate(
+        recent_sold=Coalesce(
+            Sum(
+                "orderitem__quantity_order_items",
+                filter=Q(
+                    orderitem__id_orders__created_at_orders__gte=cutoff,
+                    orderitem__id_orders__status_orders__in=valid_statuses,
+                ),
+            ),
+            0,
+        ),
+        total_sold=Coalesce(
+            Sum(
+                "orderitem__quantity_order_items",
+                filter=Q(orderitem__id_orders__status_orders__in=valid_statuses),
+            ),
+            0,
+        ),
+    ).order_by("-recent_sold", "-total_sold", "-id_products")
+
+    safe_offset = max(0, int(offset or 0))
+    safe_limit = max(1, int(limit or 24))
+    products = list(queryset[safe_offset:safe_offset + safe_limit])
     _format_product_cards(products)
     return products
 
@@ -1637,6 +1988,48 @@ def _pick_recommendation_display_count(total_count, limit):
     return min(total_count, limit)
 
 
+def _fill_recommendations_to_limit(initial_products, limit=12, exclude_ids=None):
+    """Ensure we return up to `limit` products by filling with popular/active products.
+
+    initial_products: list of Product instances already formatted
+    """
+    if not isinstance(limit, int) or limit <= 0:
+        return initial_products
+
+    # Start from only active products (exclude discontinued from recommendation lists)
+    products = [p for p in (initial_products or []) if not getattr(p, "is_discontinued", False) and getattr(p, "status", "") == "Đang kinh doanh"]
+    exclude = set(exclude_ids or [])
+    existing_ids = {getattr(p, "id_products", None) for p in products if getattr(p, "id_products", None) is not None}
+    exclude.update(existing_ids)
+
+    if len(products) >= limit:
+        return products[:limit]
+
+    # First try popular products (already excludes discontinued via public queryset)
+    popular_candidates = _get_popular_products_for_recommendation(limit=limit * 3)
+    for p in popular_candidates:
+        if getattr(p, "id_products", None) in exclude:
+            continue
+        products.append(p)
+        exclude.add(p.id_products)
+        if len(products) >= limit:
+            break
+
+    # As a last resort, pull newest active products from public queryset
+    if len(products) < limit:
+        # Pull newest active products as a last resort
+        more = list(_get_public_products_queryset().filter(status="Đang kinh doanh").order_by("-id_products")[: limit * 3])
+        for p in more:
+            if getattr(p, "id_products", None) in exclude:
+                continue
+            products.append(p)
+            exclude.add(p.id_products)
+            if len(products) >= limit:
+                break
+
+    return products[:limit]
+
+
 def _get_personalized_products_for_home(request, limit=8):
     user_id = request.session.get("logged_in_user_id")
     session_product_ids = _get_session_recommendation_product_ids(request, limit=max(limit * 2, 12))
@@ -1645,12 +2038,14 @@ def _get_personalized_products_for_home(request, limit=8):
         if session_product_ids:
             session_products = _load_products_by_ordered_ids(session_product_ids)
             _format_product_cards(session_products)
-            display_count = _pick_recommendation_display_count(len(session_products), limit)
-            return session_products[:display_count], "session"
+            # exclude discontinued from recommendations
+            active_session_products = [p for p in session_products if not getattr(p, "is_discontinued", False) and getattr(p, "status", "") == "Đang kinh doanh"]
+            filled = _fill_recommendations_to_limit(active_session_products, limit=limit)
+            return filled, "session"
 
         popular_products = _get_popular_products_for_recommendation(limit=limit)
-        display_count = _pick_recommendation_display_count(len(popular_products), limit)
-        return popular_products[:display_count], "popular"
+        filled = _fill_recommendations_to_limit(popular_products, limit=limit)
+        return filled, "popular"
 
     ranking_fetch_limit = max(limit * 3, 18)
     user_based_rows = []
@@ -1691,8 +2086,8 @@ def _get_personalized_products_for_home(request, limit=8):
 
     if not session_scores and not user_scores and not item_scores:
         popular_products = _get_popular_products_for_recommendation(limit=limit)
-        display_count = _pick_recommendation_display_count(len(popular_products), limit)
-        return popular_products[:display_count], "popular"
+        filled = _fill_recommendations_to_limit(popular_products, limit=limit)
+        return filled, "popular"
 
     def _normalize_scores(score_map):
         max_score = max(score_map.values(), default=0.0)
@@ -1756,53 +2151,48 @@ def _get_personalized_products_for_home(request, limit=8):
         if session_product_ids:
             session_products = _load_products_by_ordered_ids(session_product_ids)
             _format_product_cards(session_products)
-            display_count = _pick_recommendation_display_count(len(session_products), limit)
-            return session_products[:display_count], "session"
+            active_session_products = [p for p in session_products if not getattr(p, "is_discontinued", False) and getattr(p, "status", "") == "Đang kinh doanh"]
+            filled = _fill_recommendations_to_limit(active_session_products, limit=limit)
+            return filled, "session"
 
         popular_products = _get_popular_products_for_recommendation(limit=limit)
-        display_count = _pick_recommendation_display_count(len(popular_products), limit)
-        return popular_products[:display_count], "popular"
+        filled = _fill_recommendations_to_limit(popular_products, limit=limit)
+        return filled, "popular"
 
     ordered_products = _load_products_by_ordered_ids(recommended_ids)
-    display_count = _pick_recommendation_display_count(len(ordered_products), limit)
-    ordered_products = ordered_products[:display_count]
-
-    if not ordered_products:
-        popular_products = _get_popular_products_for_recommendation(limit=limit)
-        display_count = _pick_recommendation_display_count(len(popular_products), limit)
-        return popular_products[:display_count], "popular"
-
+    # Ensure we return up to `limit` products (fill with popular/active products if needed)
     _format_product_cards(ordered_products)
-
-    return ordered_products, recommendation_source
+    active_ordered = [p for p in ordered_products if not getattr(p, "is_discontinued", False) and getattr(p, "status", "") == "Đang kinh doanh"]
+    filled = _fill_recommendations_to_limit(active_ordered, limit=limit)
+    return filled, recommendation_source
 
 
 def home_page(request):
     selected_category_id = (request.GET.get("category") or "").strip()
     search_query = (request.GET.get("q") or "").strip()
+    layout_mode = (request.GET.get("layout") or "").strip().lower()
+    is_all_products_page = layout_mode == "all-products"
     is_search_result = bool(search_query)
     selected_brand = (request.GET.get("brand") or "").strip()
     selected_price_range = (request.GET.get("price_range") or "").strip()
+    selected_sort = (request.GET.get("sort") or "best_selling").strip().lower() or "best_selling"
+    selected_best_selling = (request.GET.get("best_selling") or "").strip().lower() in {"1", "true", "on", "yes"}
     has_product_filters = bool(
-        selected_category_id or search_query or selected_brand or selected_price_range
+        selected_category_id or search_query or selected_brand or selected_price_range or selected_best_selling
     )
 
     image_exists_subquery = ProductImage.objects.filter(id_products_id=OuterRef("id_products"))
-    products_queryset = (
-        Product.objects.select_related("id_categories")
-        .prefetch_related("images")
-        .annotate(has_image=Exists(image_exists_subquery))
-    )
+    products_queryset = _get_public_products_queryset().annotate(has_image=Exists(image_exists_subquery))
 
     selected_category_name = ""
     if selected_category_id.isdigit():
         products_queryset = products_queryset.filter(id_categories_id=int(selected_category_id))
-        selected_category = Category.objects.filter(id_categories=int(selected_category_id)).first()
+        selected_category = _get_public_categories_queryset().filter(id_categories=int(selected_category_id)).first()
         if selected_category:
             selected_category_name = selected_category.name_categories
 
     # Lọc sản phẩm theo khoảng giá và category nếu có
-    products_queryset = filter_products_by_price(request)
+    products_queryset = filter_products_by_price(request, base_queryset=products_queryset)
 
     # Nếu muốn kết hợp thêm các filter khác (brand, search_query) thì tiếp tục filter trên products_queryset
     # Không dùng order_by("-has_image", ...) vì has_image không phải là field thực tế
@@ -1815,11 +2205,13 @@ def home_page(request):
 
     _save_search_history_for_logged_in_user(request, search_query)
 
-    products = (
-        products_queryset
-        .annotate(total_sold=Coalesce(Sum("orderitem__quantity_order_items"), 0))
-        .order_by("-total_sold", "-id_products")[:12]
-    )
+    products_queryset = products_queryset.annotate(total_sold=Coalesce(Sum("orderitem__quantity_order_items"), 0))
+    if selected_best_selling:
+        products_queryset = products_queryset.filter(total_sold__gt=0)
+    products_queryset = _apply_product_sorting(products_queryset, selected_sort)
+    paginator = Paginator(products_queryset, 18)
+    page_obj = paginator.get_page(request.GET.get("page") or 1)
+    products = list(page_obj)
     discount_context = _build_discount_context()
 
     for product in products:
@@ -1840,6 +2232,12 @@ def home_page(request):
 
     context = _common_page_context(request)
     context["products"] = products
+    context["page_obj"] = page_obj
+    context["paginator"] = paginator
+    query_params = request.GET.copy()
+    if "page" in query_params:
+        query_params.pop("page")
+    context["base_query"] = query_params.urlencode()
     context["selected_category_id"] = selected_category_id
     context["selected_category_name"] = selected_category_name
     context["search_query"] = search_query
@@ -1847,14 +2245,29 @@ def home_page(request):
     context["has_product_filters"] = has_product_filters
     context["selected_brand"] = selected_brand
     context["selected_price_range"] = selected_price_range
+    context["selected_sort"] = selected_sort
+    context["selected_best_selling"] = selected_best_selling
+    context["is_all_products_page"] = is_all_products_page
+    context["catalog_title"] = "Tất cả sản phẩm" if is_all_products_page else "SẢN PHẨM BÁN CHẠY"
+    context["hide_home_hero"] = is_all_products_page
+    context["hide_home_promotions"] = is_all_products_page
     
     # Add hot sale products
-    context["hot_sale_products"] = _get_hot_sale_products(limit=10)
-    recommended_products, recommendation_source = _get_personalized_products_for_home(request, limit=12)
-    context["recommended_products"] = recommended_products
-    context["recommendation_source"] = recommendation_source
+    if not is_all_products_page:
+        context["hot_sale_products"] = _get_hot_sale_products(limit=10)
+        recommended_products, recommendation_source = _get_personalized_products_for_home(request, limit=12)
+        context["recommended_products"] = recommended_products
+        context["recommendation_source"] = recommendation_source
+    else:
+        context["hot_sale_products"] = []
+        context["recommended_products"] = []
+        context["recommendation_source"] = ""
     
     return render(request, "store/pages/home.html", context)
+
+
+def all_products_page(request):
+    return redirect("/?layout=all-products")
 
 
 def _parse_description_to_table(description):
@@ -1886,10 +2299,67 @@ def _parse_description_to_table(description):
 
 
 def product_detail_page(request, product_id):
+    user_id = request.session.get("logged_in_user_id")
+
+    if request.method == "POST":
+        action = (request.POST.get("action") or "").strip().lower()
+        if action == "submit_review":
+            if not user_id:
+                messages.error(request, "Vui lòng đăng nhập để đánh giá sản phẩm.")
+                return redirect(f"/products/{product_id}/?auth=login")
+
+            locked_response = _enforce_active_user(request)
+            if locked_response:
+                return locked_response
+
+            password_response = _enforce_password_change(request)
+            if password_response:
+                return password_response
+
+            if not _user_has_completed_purchase(user_id, product_id):
+                messages.error(request, "Bạn chỉ có thể đánh giá sau khi đã mua và nhận sản phẩm (đơn hoàn thành).")
+                return redirect("product_detail_page", product_id=product_id)
+
+            try:
+                rating = int(request.POST.get("rating") or 0)
+            except (TypeError, ValueError):
+                rating = 0
+
+            if rating < 1 or rating > 5:
+                messages.error(request, "Vui lòng chọn số sao từ 1 đến 5.")
+                return redirect("product_detail_page", product_id=product_id)
+
+            comment = (request.POST.get("comment") or "").strip()
+            if len(comment) > 2000:
+                messages.error(request, "Nội dung đánh giá quá dài (tối đa 2000 ký tự).")
+                return redirect("product_detail_page", product_id=product_id)
+
+            existing_review = (
+                Review.objects.filter(id_users_id=user_id, id_products_id=product_id)
+                .order_by("-id_reviews")
+                .first()
+            )
+            if existing_review:
+                existing_review.rating = rating
+                existing_review.comment = comment
+                existing_review.status = "Hiển thị"
+                existing_review.save(update_fields=["rating", "comment", "status"])
+                messages.success(request, "Đã cập nhật đánh giá của bạn. Cảm ơn bạn!")
+            else:
+                Review.objects.create(
+                    id_users_id=user_id,
+                    id_products_id=product_id,
+                    rating=rating,
+                    comment=comment,
+                    status="Hiển thị",
+                )
+                messages.success(request, "Cảm ơn bạn đã đánh giá sản phẩm!")
+
+            return redirect("product_detail_page", product_id=product_id)
+
     try:
         product_obj = (
-            Product.objects.select_related("id_categories")
-            .prefetch_related("images")
+            _get_public_products_queryset()
             .get(id_products=product_id)
         )
     except Product.DoesNotExist as exc:
@@ -1916,7 +2386,31 @@ def product_detail_page(request, product_id):
         .get("total_sold", 0)
     )
 
+    review_summary = _get_product_review_summary(product_obj.id_products)
+    visible_reviews = _get_visible_product_reviews(product_obj.id_products, limit=25)
+
+    can_review = False
+    my_review = None
+    if user_id:
+        can_review = _user_has_completed_purchase(user_id, product_obj.id_products)
+        my_review = (
+            Review.objects.filter(id_users_id=user_id, id_products_id=product_obj.id_products)
+            .order_by("-id_reviews")
+            .first()
+        )
+
     pricing = _get_product_pricing(product_obj)
+    
+    # Determine stock status
+    stock = product_obj.stock or 0
+    stock_status = ""
+    is_out_of_stock = stock == 0
+    is_low_stock = stock > 0 and stock < 5
+    if is_out_of_stock:
+        stock_status = "Hết hàng"
+    elif is_low_stock:
+        stock_status = "Sắp hết hàng"
+    
     product = {
         "id": product_obj.id_products,
         "name": product_obj.name_products,
@@ -1933,7 +2427,15 @@ def product_detail_page(request, product_id):
         "primary_image": gallery_images[0] if gallery_images else "",
         "gallery": gallery_images,
         "sold_count": sold_count,
-        "rating_value": "4.5",
+        "rating_value": review_summary["avg_rating"],
+        "rating_count": review_summary["total_reviews"],
+        "rating_star_count": review_summary["star_count"],
+        "status": product_obj.status,
+        "is_discontinued": product_obj.is_discontinued,
+        "stock": stock,
+        "stock_status": stock_status,
+        "is_out_of_stock": is_out_of_stock,
+        "is_low_stock": is_low_stock,
     }
 
     context = _common_page_context(request)
@@ -1954,6 +2456,9 @@ def product_detail_page(request, product_id):
             "description_table": description_table,
             "recommended_products": recommended_products,
             "recommendation_source": recommendation_source,
+            "reviews": visible_reviews,
+            "can_review": can_review,
+            "my_review": my_review,
             "promotions": [
                 _format_promotion_text(item)
                 for item in promotion_context["promotions_by_code"].values()
@@ -1969,6 +2474,14 @@ def cart_page(request):
         messages.error(request, "Vui lòng đăng nhập để xem giỏ hàng")
         return redirect("/?auth=login")
 
+    locked_response = _enforce_active_user(request)
+    if locked_response:
+        return locked_response
+
+    password_response = _enforce_password_change(request)
+    if password_response:
+        return password_response
+
     context = _common_page_context(request)
     recommended_products, recommendation_source = _get_personalized_products_for_home(request, limit=6)
     context["recommended_products"] = recommended_products
@@ -1981,6 +2494,14 @@ def viewed_products_page(request):
     if not user_id:
         messages.error(request, "Vui lòng đăng nhập để xem sản phẩm đã xem")
         return redirect("/?auth=login")
+
+    locked_response = _enforce_active_user(request)
+    if locked_response:
+        return locked_response
+
+    password_response = _enforce_password_change(request)
+    if password_response:
+        return password_response
 
     behavior_rows = (
         UserBehavior.objects.filter(
@@ -2003,8 +2524,7 @@ def viewed_products_page(request):
     if product_ids:
         products_map = {
             item.id_products: item
-            for item in Product.objects.select_related("id_categories")
-            .prefetch_related("images")
+            for item in _get_public_products_queryset()
             .filter(id_products__in=product_ids)
         }
         products = [products_map[product_id] for product_id in product_ids if product_id in products_map]
@@ -2042,6 +2562,14 @@ def purchased_products_page(request):
         messages.error(request, "Vui lòng đăng nhập để xem sản phẩm đã mua")
         return redirect("/?auth=login")
 
+    locked_response = _enforce_active_user(request)
+    if locked_response:
+        return locked_response
+
+    password_response = _enforce_password_change(request)
+    if password_response:
+        return password_response
+
     purchased_rows = (
         OrderItem.objects.filter(id_orders__id_users_id=user_id)
         .exclude(id_orders__status_orders="cancelled")
@@ -2058,11 +2586,22 @@ def purchased_products_page(request):
     if ordered_product_ids:
         products_map = {
             item.id_products: item
-            for item in Product.objects.select_related("id_categories")
-            .prefetch_related("images")
+            for item in _get_public_products_queryset()
             .filter(id_products__in=ordered_product_ids)
         }
         products = [products_map[product_id] for product_id in ordered_product_ids if product_id in products_map]
+
+    completed_product_ids = set(
+        OrderItem.objects.filter(
+            id_orders__id_users_id=user_id,
+            id_orders__status_orders="completed",
+            id_products_id__in=ordered_product_ids,
+        ).values_list("id_products_id", flat=True)
+    )
+    reviewed_product_ids = set(
+        Review.objects.filter(id_users_id=user_id, id_products_id__in=ordered_product_ids)
+        .values_list("id_products_id", flat=True)
+    )
 
     discount_context = _build_discount_context()
     for product in products:
@@ -2080,6 +2619,8 @@ def purchased_products_page(request):
                 product.discount_badge = f"Giảm {pricing['discount_amount']:,.0f}đ"
         else:
             product.discount_badge = ""
+        product.can_review = product.id_products in completed_product_ids
+        product.has_reviewed = product.id_products in reviewed_product_ids
 
     category_group_map = {}
     for product in products:
@@ -2102,6 +2643,11 @@ def purchased_products_page(request):
         {
             "grouped_categories": grouped_categories,
             "purchased_product_count": len(products),
+            "pending_review_count": sum(
+                1
+                for item in products
+                if getattr(item, "can_review", False) and not getattr(item, "has_reviewed", False)
+            ),
         }
     )
 
@@ -2110,6 +2656,49 @@ def purchased_products_page(request):
 
 def _safe_redirect_back_home(default_auth_tab="login"):
     return redirect(f"/?auth={default_auth_tab}")
+
+
+def _clear_login_session(request):
+    for key in (
+        "cart_items",
+        "logged_in_user_id",
+        "logged_in_user_name",
+        "logged_in_user_role",
+    ):
+        request.session.pop(key, None)
+
+
+def _enforce_active_user(request, json_response=False):
+    user_id = request.session.get("logged_in_user_id")
+    if not user_id:
+        return None
+
+    status_value = (
+        User.objects.filter(id_users=user_id)
+        .values_list("status", flat=True)
+        .first()
+    )
+    if status_value is None:
+        return None
+
+    try:
+        status_value = int(status_value)
+    except (TypeError, ValueError):
+        status_value = 1
+
+    if status_value == 0:
+        _clear_login_session(request)
+        msg = "Tài khoản của bạn đã bị khóa hoặc ngừng hoạt động."
+        if json_response:
+            return JsonResponse({"success": False, "message": msg}, status=403)
+        messages.error(request, msg)
+        return redirect("/?auth=login")
+
+    return None
+
+
+def _enforce_password_change(request, allow_password_change=False, json_response=False):
+    return None
 
 
 @require_POST
@@ -2220,6 +2809,7 @@ def login_user(request):
         if is_ajax:
             return JsonResponse({"success": False, "message": msg}, status=400)
         else:
+            messages.error(request, msg)
             return _safe_redirect_back_home("login")
 
     user = User.objects.filter(email=email).first()
@@ -2228,6 +2818,7 @@ def login_user(request):
         if is_ajax:
             return JsonResponse({"success": False, "message": msg}, status=400)
         else:
+            messages.error(request, msg)
             return _safe_redirect_back_home("login")
 
     hashed_ok = check_password(password, user.password)
@@ -2238,6 +2829,21 @@ def login_user(request):
         if is_ajax:
             return JsonResponse({"success": False, "message": msg}, status=400)
         else:
+            messages.error(request, msg)
+            return _safe_redirect_back_home("login")
+
+    status_value = getattr(user, "status", 1)
+    try:
+        status_value = int(status_value)
+    except (TypeError, ValueError):
+        status_value = 1
+
+    if status_value == 0:
+        msg = "Tài khoản đã bị khóa hoặc không còn hoạt động."
+        if is_ajax:
+            return JsonResponse({"success": False, "message": msg}, status=403)
+        else:
+            messages.error(request, msg)
             return _safe_redirect_back_home("login")
 
     if plain_ok:
@@ -2272,6 +2878,10 @@ def account_info(request):
         messages.error(request, "Vui lòng đăng nhập để xem tài khoản")
         return redirect("/?auth=login")
 
+    locked_response = _enforce_active_user(request)
+    if locked_response:
+        return locked_response
+
     try:
         user = User.objects.get(id_users=user_id)
     except User.DoesNotExist:
@@ -2280,7 +2890,7 @@ def account_info(request):
         messages.error(request, "Tài khoản không tồn tại")
         return redirect("/")
 
-    categories = list(Category.objects.all().order_by("name_categories")[:10])
+    categories = list(_get_public_categories_queryset().order_by("name_categories")[:10])
     
     # Thêm brand_list cho mỗi category (nếu cần)
     for cat in categories:
@@ -2301,6 +2911,39 @@ def account_info(request):
 
     if request.method == "POST":
         action = (request.POST.get("action") or "update_profile").strip().lower()
+
+        if action == "change_password":
+            current_password = request.POST.get("current_password") or ""
+            new_password = request.POST.get("new_password") or ""
+            confirm_password = request.POST.get("confirm_password") or ""
+
+            if not current_password or not new_password or not confirm_password:
+                messages.error(request, "Vui lòng nhập đầy đủ thông tin mật khẩu")
+                return redirect("account_info")
+
+            hashed_ok = check_password(current_password, user.password)
+            plain_ok = user.password == current_password
+
+            if not (hashed_ok or plain_ok):
+                messages.error(request, "Mật khẩu hiện tại không đúng")
+                return redirect("account_info")
+
+            if new_password != confirm_password:
+                messages.error(request, "Mật khẩu mới không khớp")
+                return redirect("account_info")
+
+            if len(new_password) < 6:
+                messages.error(request, "Mật khẩu mới phải có ít nhất 6 ký tự")
+                return redirect("account_info")
+
+            if new_password == current_password:
+                messages.error(request, "Mật khẩu mới phải khác mật khẩu hiện tại")
+                return redirect("account_info")
+
+            user.password = make_password(new_password)
+            user.save(update_fields=["password"])
+            messages.success(request, "Đổi mật khẩu thành công")
+            return redirect("account_info")
 
         if action == "add_address":
             address_name = (request.POST.get("address_name") or "").strip()
@@ -2341,6 +2984,52 @@ def account_info(request):
             messages.success(request, "Đã thêm địa chỉ giao hàng")
             return redirect("account_info")
 
+        if action == "edit_address":
+            address_id = (request.POST.get("address_id") or "").strip()
+            if not address_id.isdigit():
+                messages.error(request, "Địa chỉ không hợp lệ")
+                return redirect("account_info")
+
+            address_name = (request.POST.get("address_name") or "").strip()
+            full_address = (request.POST.get("full_address") or "").strip()
+            phone_address = (request.POST.get("phone_address") or "").strip()
+            set_default = (request.POST.get("is_default") or "") == "1"
+
+            allowed_address_names = {"Nhà riêng", "Công ty", "Khác"}
+            if address_name not in allowed_address_names:
+                address_name = "Khác"
+
+            if not full_address:
+                messages.error(request, "Vui lòng nhập địa chỉ giao hàng")
+                return redirect("account_info")
+
+            with transaction.atomic():
+                addr = UserAddress.objects.filter(id_user_addresses=int(address_id), id_users_id=user_id).first()
+                if not addr:
+                    messages.error(request, "Không tìm thấy địa chỉ")
+                    return redirect("account_info")
+
+                # Update fields
+                addr.address_name = address_name
+                addr.full_address = full_address
+                addr.phone_address = phone_address or None
+
+                if set_default and not addr.is_default:
+                    UserAddress.objects.filter(id_users_id=user_id, is_default=True).update(is_default=False)
+                    addr.is_default = True
+
+                addr.save(update_fields=[f for f in ["address_name", "full_address", "phone_address", "is_default"] if hasattr(addr, f)])
+
+                # If this becomes default, update user's profile address/phone
+                if addr.is_default:
+                    user.address_users = addr.full_address
+                    if addr.phone_address:
+                        user.phone_users = addr.phone_address
+                    user.save(update_fields=["address_users", "phone_users"])
+
+            messages.success(request, "Đã cập nhật địa chỉ giao hàng")
+            return redirect("account_info")
+
         if action == "delete_address":
             address_id = (request.POST.get("address_id") or "").strip()
             if not address_id.isdigit():
@@ -2354,6 +3043,15 @@ def account_info(request):
                 ).first()
                 if not address_obj:
                     messages.error(request, "Không tìm thấy địa chỉ")
+                    return redirect("account_info")
+
+                # Nếu địa chỉ đang được tham chiếu bởi các đơn hàng thì không xóa được
+                referenced_by_orders = Order.objects.filter(id_user_addresses_id=address_obj.id_user_addresses).exists()
+                if referenced_by_orders:
+                    messages.error(
+                        request,
+                        "Không thể xóa địa chỉ này vì đã được sử dụng trong đơn hàng. Vui lòng chỉnh sửa thông tin nếu cần hoặc liên hệ hỗ trợ.",
+                    )
                     return redirect("account_info")
 
                 was_default = bool(address_obj.is_default)
@@ -2469,13 +3167,15 @@ def serialize_product(product):
         "description": product.description,
         "category_id": product.id_categories_id,
         "category_name": product.id_categories.name_categories if product.id_categories else None,
+        "status": product.status,
+        "is_discontinued": product.is_discontinued,
     }
 
 
 @require_GET
 def get_products(request):
 
-    products = Product.objects.select_related("id_categories").prefetch_related("images").all()
+    products = _get_public_products_queryset().all()
 
     data = [serialize_product(product) for product in products]
 
@@ -2486,7 +3186,7 @@ def get_products(request):
 def get_product_detail(request, id):
 
     try:
-        product = Product.objects.select_related("id_categories").get(id_products=id)
+        product = _get_public_products_queryset().get(id_products=id)
     except Product.DoesNotExist:
         return JsonResponse({"error": "Product not found"}, status=404)
 
@@ -2498,7 +3198,7 @@ def get_product_detail(request, id):
 @require_GET
 def get_categories(request):
 
-    categories = Category.objects.all()
+    categories = _get_public_categories_queryset()
 
     data = []
 
@@ -2519,7 +3219,7 @@ def search_products(request):
     selected_brand = (request.GET.get("brand") or "").strip()
     selected_price_range = (request.GET.get("price_range") or "").strip()
 
-    products = Product.objects.select_related("id_categories").prefetch_related("images")
+    products = _get_public_products_queryset()
 
     if selected_category_id.isdigit():
         products = products.filter(id_categories_id=int(selected_category_id))
@@ -2552,8 +3252,7 @@ def search_autocomplete(request):
     tokens = [token for token in keyword_lower.split() if token]
 
     candidate_products = list(
-        Product.objects.select_related("id_categories")
-        .prefetch_related("images")
+        _get_public_products_queryset()
         .annotate(total_sold=Coalesce(Sum("orderitem__quantity_order_items"), 0))
         .filter(
             Q(name_products__icontains=keyword)
@@ -2692,6 +3391,73 @@ def session_recommendations(request):
     )
 
 
+@require_GET
+def session_recommendations_more(request):
+    try:
+        limit = max(1, min(int(request.GET.get("limit") or 12), 24))
+    except (TypeError, ValueError):
+        limit = 12
+
+    try:
+        offset = max(0, int(request.GET.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    fetch_limit = offset + limit
+    recommended_products, recommendation_source = _get_personalized_products_for_home(request, limit=fetch_limit)
+    sliced = recommended_products[offset:offset + limit]
+
+    rendered_cards = [
+        render_to_string("store/components/product_card.html", {"product": product}, request=request)
+        for product in sliced
+    ]
+
+    has_more = len(recommended_products) > (offset + limit)
+    return JsonResponse(
+        {
+            "source": recommendation_source,
+            "items_html": "".join(rendered_cards),
+            "count": len(sliced),
+            "has_more": has_more,
+        }
+    )
+
+
+@require_GET
+def best_sellers_api(request):
+    try:
+        limit = max(1, min(int(request.GET.get("limit") or 12), 24))
+    except (TypeError, ValueError):
+        limit = 12
+
+    try:
+        offset = max(0, int(request.GET.get("offset") or 0))
+    except (TypeError, ValueError):
+        offset = 0
+
+    try:
+        window_days = max(1, min(int(request.GET.get("window") or 30), 90))
+    except (TypeError, ValueError):
+        window_days = 30
+
+    products = _get_best_selling_products(limit=limit + 1, offset=offset, window_days=window_days)
+    has_more = len(products) > limit
+    if has_more:
+        products = products[:limit]
+
+    rendered_cards = [
+        render_to_string("store/components/product_card.html", {"product": product}, request=request)
+        for product in products
+    ]
+    return JsonResponse(
+        {
+            "items_html": "".join(rendered_cards),
+            "count": len(products),
+            "has_more": has_more,
+        }
+    )
+
+
 @csrf_exempt
 @require_POST
 def ai_data_chat(request):
@@ -2704,46 +3470,50 @@ def ai_data_chat(request):
     if not question:
         return JsonResponse({"error": "Missing required field: question"}, status=400)
 
-    # Dùng Gemini API key
-    api_key = os.environ.get("GEMINI_API_KEY") or str(getattr(settings, "GEMINI_API_KEY", "AIzaSyDNDSGMgdL298OnC6sRTShVHwDmXasj0qU") or "").strip()
+
+    # Lấy Gemini API key
+    api_key = os.environ.get("GEMINI_API_KEY") or str(getattr(settings, "GEMINI_API_KEY", "") or "").strip()
     if not api_key:
         return JsonResponse({"error": "GEMINI_API_KEY is not configured"}, status=503)
 
     context = _build_ai_chat_data_context(question)
-
     budget_text = "khong xac dinh"
     if context.get("budget"):
         budget_text = f"{int(context['budget']):,} VND"
 
     system_prompt = (
-        "Bạn là trợ lý tư vấn build PC của cửa hàng. "
-        "Chỉ được phép trả lời dựa trên dữ liệu cung cấp bên dưới. "
-        "Nếu dữ liệu không đủ, hãy nói rõ là không tìm thấy cấu hình phù hợp. "
-        "Nếu có thể, hãy đề xuất cấu hình PC theo format MARKDOWN TABLE, mỗi dòng 1 linh kiện (CPU, GPU, RAM, Main, SSD, PSU, Case, ...), kèm tên, mã, giá, ID sản phẩm. "
-        "Sau bảng, hãy trả về cấu hình gợi ý dưới dạng JSON (key là loại linh kiện, value là ID sản phẩm), ví dụ: {\"CPU\":123,\"GPU\":456,...}. "
-        "Nếu không đủ linh kiện, chỉ trả về những gì có. Không tự bịa thêm sản phẩm ngoài dữ liệu. "
-        "Luôn trả lời ngắn gọn, dễ copy, không giải thích dài dòng."
+        "Bạn là trợ lý AI tư vấn build PC cho khách hàng tại cửa hàng. "
+        "Chỉ được phép trả lời dựa trên dữ liệu sản phẩm cung cấp bên dưới, không tự bịa thêm bất kỳ linh kiện hay thông tin nào. "
+        "Nếu không đủ dữ liệu để tư vấn cấu hình, hãy trả lời: 'Xin lỗi, hiện tại cửa hàng chưa đủ linh kiện phù hợp để tư vấn cấu hình theo yêu cầu.' "
+        "Nếu đủ dữ liệu, hãy đề xuất cấu hình PC tối ưu nhất theo yêu cầu khách, ưu tiên sản phẩm còn hàng (tồn kho > 0), giá tốt, đúng mục đích sử dụng. "
+        "Trả lời theo định dạng: \n1. Bảng linh kiện dạng MARKDOWN TABLE, mỗi dòng gồm: Loại linh kiện | Tên | Mã | Giá | ID sản phẩm | Tồn kho.\n2. Sau bảng, trả về cấu hình gợi ý dưới dạng JSON (key là loại linh kiện, value là ID sản phẩm), ví dụ: {\"CPU\":123,\"GPU\":456,...}.\n3. Không giải thích dài dòng, chỉ trả lời ngắn gọn, dễ copy."
     )
 
     user_prompt = (
-        f"Câu hỏi khách: {question}\n\n"
-        f"Mục đích suy ra: {context['intent']}\n"
-        f"Ngân sách suy ra: {budget_text}\n"
-        f"Danh mục hiện có: {context['categories_text']}\n"
-        f"Số sản phẩm nạp vào bộ nhớ: {context['products_count']}\n"
-        "Dữ liệu sản phẩm:\n"
+        f"Câu hỏi của khách: {question}\n"
+        f"Mục đích sử dụng: {context['intent']}\n"
+        f"Ngân sách dự kiến: {budget_text}\n"
+        f"Danh mục linh kiện hiện có: {context['categories_text']}\n"
+        f"Số sản phẩm trong dữ liệu: {context['products_count']}\n"
+        "Dữ liệu sản phẩm chi tiết:\n"
         f"{context['products_text']}"
     )
 
-    # Gemini API expects: { contents: [{ role: "user", parts: [{ text: ... }] }, ...] }
     payload = {
         "contents": [
             {"role": "user", "parts": [{"text": system_prompt + "\n" + user_prompt}]}
         ]
     }
+    # Đúng endpoint: chỉ nối key vào URL nếu endpoint KHÔNG có ?key=...
+    endpoint = GEMINI_CHAT_ENDPOINT
+    if "?key=" in endpoint:
+        endpoint = endpoint.replace("?key=YOUR_API_KEY", f"?key={api_key}")
+    elif endpoint.endswith(":generateContent"):
+        endpoint = f"{endpoint}?key={api_key}"
+
     try:
         resp = requests.post(
-            f"{GEMINI_CHAT_ENDPOINT}?key={api_key}",
+            endpoint,
             json=payload,
             timeout=35
         )
@@ -2784,6 +3554,14 @@ def save_cart_to_session(request):
     if not user_id:
         return JsonResponse({"error": "Not authenticated"}, status=401)
 
+    locked_response = _enforce_active_user(request, json_response=True)
+    if locked_response:
+        return locked_response
+
+    password_response = _enforce_password_change(request, json_response=True)
+    if password_response:
+        return password_response
+
     try:
         body = json.loads(request.body)
         cart_items = body.get("cart_items", [])
@@ -2807,6 +3585,14 @@ def load_cart_from_database(request):
     user_id = request.session.get("logged_in_user_id")
     if not user_id:
         return JsonResponse({"error": "Not authenticated"}, status=401)
+
+    locked_response = _enforce_active_user(request, json_response=True)
+    if locked_response:
+        return locked_response
+
+    password_response = _enforce_password_change(request, json_response=True)
+    if password_response:
+        return password_response
 
     cart_items = _get_cart_items_from_database(user_id)
     request.session["cart_items"] = cart_items
@@ -2893,6 +3679,14 @@ def checkout(request):
     if not user_id:
         messages.error(request, "Vui lòng đăng nhập để tiếp tục")
         return redirect("/?auth=login")
+
+    locked_response = _enforce_active_user(request)
+    if locked_response:
+        return locked_response
+
+    password_response = _enforce_password_change(request)
+    if password_response:
+        return password_response
 
     try:
         user = User.objects.get(id_users=user_id)
@@ -3108,6 +3902,14 @@ def order_list(request):
         messages.error(request, "Vui lòng đăng nhập")
         return redirect("/?auth=login")
 
+    locked_response = _enforce_active_user(request)
+    if locked_response:
+        return locked_response
+
+    password_response = _enforce_password_change(request)
+    if password_response:
+        return password_response
+
     try:
         user = User.objects.get(id_users=user_id)
     except User.DoesNotExist:
@@ -3166,6 +3968,14 @@ def order_detail(request, order_id):
         messages.error(request, "Vui lòng đăng nhập")
         return redirect("/?auth=login")
 
+    locked_response = _enforce_active_user(request)
+    if locked_response:
+        return locked_response
+
+    password_response = _enforce_password_change(request)
+    if password_response:
+        return password_response
+
     try:
         order = Order.objects.get(id_orders=order_id, id_users_id=user_id)
     except Order.DoesNotExist:
@@ -3197,8 +4007,17 @@ def order_detail(request, order_id):
         else:
             selected_reason_text = cancel_reason
 
-        order.status_orders = "cancelled"
-        order.save(update_fields=["status_orders"])
+        with transaction.atomic():
+            order.status_orders = "cancelled"
+            order.save(update_fields=["status_orders"])
+
+            # Hoàn lại số lượng sản phẩm vào kho
+            order_items = OrderItem.objects.filter(id_orders_id=order_id)
+            for item in order_items:
+                product = item.id_products
+                if product:
+                    product.stock = (product.stock or 0) + item.quantity_order_items
+                    product.save(update_fields=["stock"])
 
         # Lưu lý do hủy vào session để hiển thị cho người dùng mà không cần thay đổi schema DB hiện tại.
         cancel_reason_map = request.session.get("order_cancel_reason_map", {})
@@ -3236,6 +4055,23 @@ def order_detail(request, order_id):
     except User.DoesNotExist:
         user = None
 
+    review_prompt_items = []
+    if order.status_orders == "completed":
+        order_product_ids = [item.id_products_id for item in order_items if item.id_products_id]
+        reviewed_ids = set(
+            Review.objects.filter(id_users_id=user_id, id_products_id__in=order_product_ids)
+            .values_list("id_products_id", flat=True)
+        )
+        for item in order_items:
+            if item.id_products_id in reviewed_ids:
+                continue
+            review_prompt_items.append(
+                {
+                    "product_id": item.id_products_id,
+                    "product_name": item.id_products.name_products if item.id_products else f"Sản phẩm #{item.id_products_id}",
+                }
+            )
+
     context = _common_page_context(request)
 
     context.update({
@@ -3247,14 +4083,16 @@ def order_detail(request, order_id):
         "can_cancel_order": order.status_orders == "pending",
         "order_cancel_reasons": ORDER_CANCEL_REASONS,
         "order_cancel_reason_text": (request.session.get("order_cancel_reason_map", {}) or {}).get(str(order_id), ""),
+        "review_prompt_items": review_prompt_items,
+        "show_review_prompt": bool(review_prompt_items),
     })
 
     return render(request, "store/pages/order_detail.html", context)
 
-def filter_products_by_price(request):
+def filter_products_by_price(request, base_queryset=None):
     price_range = (request.GET.get("price_range") or "").strip()
     category_id = (request.GET.get("category") or "").strip()
-    products = Product.objects.all()
+    products = base_queryset or _get_public_products_queryset()
 
     # Lọc theo category nếu có
     if category_id.isdigit():
@@ -3272,6 +4110,5 @@ def filter_products_by_price(request):
     else:
         # Nếu không chọn price_range thì không lọc theo giá
         pass
-
     return products
 

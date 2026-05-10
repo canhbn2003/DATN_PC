@@ -31,10 +31,10 @@
                     </div>
                     {% endif %}
 
-                    <div class="info-box">
+                    {% comment %} <div class="info-box">
                         <i class="bi bi-info-circle-fill"></i>
                         Cập nhật hồ sơ, quản lý nhiều địa chỉ giao hàng và chọn địa chỉ mặc định để thanh toán nhanh hơn.
-                    </div>
+                    </div> {% endcomment %}
 
                     <div class="account-layout">
                         <div class="account-right-panel">
@@ -104,6 +104,17 @@
                                     </a>
                                 </div>
                             </form>
+
+                            <div class="form-section">
+                                <div class="form-section-title">
+                                    <i class="bi bi-shield-lock-fill"></i>
+                                    Bảo mật tài khoản
+                                </div>
+                                <button type="button" class="btn-primary-custom" id="openChangePasswordBtn">
+                                    <i class="bi bi-key-fill"></i>
+                                    Đổi mật khẩu
+                                </button>
+                            </div>
                         </div>
 
                         <div class="account-left-panel">
@@ -144,6 +155,14 @@
                                                 <button type="submit" class="btn-link-action">Đặt mặc định</button>
                                             </form>
                                             {% endif %}
+                                            <button type="button" class="btn-link-action" data-edit-address
+                                                data-address-id="{{ addr.id_user_addresses }}"
+                                                data-address-name="{{ addr.address_name|default:'Khác' }}"
+                                                data-full-address="{{ addr.full_address|escapejs }}"
+                                                data-phone-address="{{ addr.phone_address|default:user.phone_users|default:'' }}"
+                                                data-is-default="{% if addr.is_default %}1{% else %}0{% endif %}"
+                                            >Chỉnh sửa</button>
+
                                             <form method="post" class="inline-form" onsubmit="return confirm('Bạn có chắc muốn xóa địa chỉ này?');">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="action" value="delete_address" />
@@ -172,12 +191,13 @@
     <div id="addressModal" class="auth-modal-overlay" aria-hidden="true">
         <div class="auth-modal" role="dialog" aria-modal="true" aria-label="Thêm địa chỉ giao hàng">
             <button type="button" class="auth-close-btn" id="closeAddressModal" aria-label="Đóng">&times;</button>
-            <h2>Thêm địa chỉ giao hàng</h2>
-            <form method="post" class="auth-form">
+            <h2 id="addressModalTitle">Thêm địa chỉ giao hàng</h2>
+            <form method="post" class="auth-form" id="addressForm">
                 {% csrf_token %}
-                <input type="hidden" name="action" value="add_address" />
+                <input type="hidden" name="action" id="addressFormAction" value="add_address" />
+                <input type="hidden" name="address_id" id="address_id_field" value="" />
 
-                <label for="address_name">Tên gợi nhớ</label>
+                <label for="address_name">Loại địa chỉ</label>
                 <select id="address_name" name="address_name" required>
                     <option value="Nhà riêng">Nhà riêng</option>
                     <option value="Công ty">Công ty</option>
@@ -190,12 +210,34 @@
                 <label for="phone_address">Số điện thoại nhận hàng</label>
                 <input type="text" id="phone_address" name="phone_address" maxlength="20" placeholder="Ví dụ: 09xxxxxxxx" />
 
-                <label class="check-line" style="margin-top: 6px; margin-bottom: 6px;">
-                    <input type="checkbox" name="is_default" value="1" />
+                <label class="check-line" style="margin-top: 4px; margin-bottom: 4px;">
+                    <input type="checkbox" name="is_default" id="is_default_field" value="1" />
                     <span>Đặt làm địa chỉ mặc định</span>
                 </label>
 
-                <button type="submit" class="auth-submit-btn">Lưu địa chỉ</button>
+                <button type="submit" class="auth-submit-btn" id="addressFormSubmit">Lưu địa chỉ</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="changePasswordModal" class="auth-modal-overlay" aria-hidden="true">
+        <div class="auth-modal" role="dialog" aria-modal="true" aria-label="Đổi mật khẩu">
+            <button type="button" class="auth-close-btn" id="closeChangePasswordModal" aria-label="Đóng">&times;</button>
+            <h2>Đổi mật khẩu</h2>
+            <form method="post" class="auth-form">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="change_password" />
+
+                <label for="current_password">Mật khẩu hiện tại <span>*</span></label>
+                <input type="password" id="current_password" name="current_password" required />
+
+                <label for="new_password">Mật khẩu mới <span>*</span></label>
+                <input type="password" id="new_password" name="new_password" minlength="6" required />
+
+                <label for="confirm_password">Nhập lại mật khẩu mới <span>*</span></label>
+                <input type="password" id="confirm_password" name="confirm_password" minlength="6" required />
+
+                <button type="submit" class="auth-submit-btn">Cập nhật mật khẩu</button>
             </form>
         </div>
     </div>
@@ -207,6 +249,9 @@
         const toggleAddressFormBtn = document.getElementById("toggleAddressFormBtn");
         const addressModal = document.getElementById("addressModal");
         const closeAddressModal = document.getElementById("closeAddressModal");
+        const openChangePasswordBtn = document.getElementById("openChangePasswordBtn");
+        const changePasswordModal = document.getElementById("changePasswordModal");
+        const closeChangePasswordModal = document.getElementById("closeChangePasswordModal");
 
         function openAddressModal() {
             if (!addressModal) return;
@@ -220,12 +265,32 @@
             addressModal.setAttribute("aria-hidden", "true");
         }
 
+        function openChangePasswordModal() {
+            if (!changePasswordModal) return;
+            changePasswordModal.classList.add("open");
+            changePasswordModal.setAttribute("aria-hidden", "false");
+        }
+
+        function hideChangePasswordModal() {
+            if (!changePasswordModal) return;
+            changePasswordModal.classList.remove("open");
+            changePasswordModal.setAttribute("aria-hidden", "true");
+        }
+
         if (toggleAddressFormBtn) {
             toggleAddressFormBtn.addEventListener("click", openAddressModal);
         }
 
         if (closeAddressModal) {
             closeAddressModal.addEventListener("click", hideAddressModal);
+        }
+
+        if (openChangePasswordBtn) {
+            openChangePasswordBtn.addEventListener("click", openChangePasswordModal);
+        }
+
+        if (closeChangePasswordModal) {
+            closeChangePasswordModal.addEventListener("click", hideChangePasswordModal);
         }
 
         if (addressModal) {
@@ -235,7 +300,78 @@
                 }
             });
         }
+
+        // Handle edit address buttons
+        document.querySelectorAll('[data-edit-address]').forEach(function(btn){
+            btn.addEventListener('click', function(){
+                const id = btn.getAttribute('data-address-id');
+                const name = btn.getAttribute('data-address-name') || 'Khác';
+                const full = btn.getAttribute('data-full-address') || '';
+                const phone = btn.getAttribute('data-phone-address') || '';
+                const isDefault = btn.getAttribute('data-is-default') === '1';
+
+                // populate modal
+                const modal = document.getElementById('addressModal');
+                const title = document.getElementById('addressModalTitle');
+                const actionField = document.getElementById('addressFormAction');
+                const idField = document.getElementById('address_id_field');
+                const nameField = document.getElementById('address_name');
+                const fullField = document.getElementById('full_address');
+                const phoneField = document.getElementById('phone_address');
+                const defaultField = document.getElementById('is_default_field');
+                const submitBtn = document.getElementById('addressFormSubmit');
+
+                actionField.value = 'edit_address';
+                idField.value = id;
+                nameField.value = name;
+                fullField.value = full;
+                phoneField.value = phone;
+                defaultField.checked = isDefault;
+                title.textContent = 'Chỉnh sửa địa chỉ giao hàng';
+                submitBtn.textContent = 'Cập nhật địa chỉ';
+
+                // open modal
+                if (modal) {
+                    modal.classList.add('open');
+                    modal.setAttribute('aria-hidden','false');
+                }
+            });
+        });
+
+        // Ensure opening add-address resets form
+        if (toggleAddressFormBtn) {
+            toggleAddressFormBtn.addEventListener('click', function(){
+                const actionField = document.getElementById('addressFormAction');
+                const idField = document.getElementById('address_id_field');
+                const nameField = document.getElementById('address_name');
+                const fullField = document.getElementById('full_address');
+                const phoneField = document.getElementById('phone_address');
+                const defaultField = document.getElementById('is_default_field');
+                const title = document.getElementById('addressModalTitle');
+                const submitBtn = document.getElementById('addressFormSubmit');
+
+                actionField.value = 'add_address';
+                idField.value = '';
+                nameField.value = 'Nhà riêng';
+                fullField.value = '';
+                phoneField.value = '';
+                defaultField.checked = false;
+                title.textContent = 'Thêm địa chỉ giao hàng';
+                submitBtn.textContent = 'Lưu địa chỉ';
+            });
+        }
+
+        if (changePasswordModal) {
+            changePasswordModal.addEventListener("click", function (event) {
+                if (event.target === changePasswordModal) {
+                    hideChangePasswordModal();
+                }
+            });
+        }
+
     </script>
+<link rel="stylesheet" href="/static/store/chatbot.css">
+<script src="/static/store/chatbot.js"></script>
 </body>
 </html>
 

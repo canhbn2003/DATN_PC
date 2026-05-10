@@ -9,6 +9,12 @@
         {% if product.has_discount and product.discount_badge %}
             <span class="product-discount-badge">{{ product.discount_badge }}</span>
         {% endif %}
+        {% if product.is_out_of_stock %}
+            <span class="product-stock-badge">Hết hàng</span>
+        {% endif %}
+        {% if product.is_discontinued %}
+            <span class="product-discontinued-badge">Ngừng kinh doanh</span>
+        {% endif %}
         {% if product.primary_image_url %}
             <img src="{{ product.primary_image_url }}" class="card-img-top" alt="{{ product.name_products }}" />
         {% else %}
@@ -38,7 +44,9 @@
                 data-product-category="{{ product.id_categories.name_categories|default:'Khác'|escape }}"
                 data-product-price="{{ product.display_price|cut:',' }}"
                 data-product-image="{{ product.primary_image_url|default:''|escape }}"
+                data-product-status="{{ product.status|default:'Đang kinh doanh'|escape }}"
                 aria-label="Thêm vào giỏ hàng"
+                {% if product.is_out_of_stock or product.is_discontinued %}disabled{% endif %}
             >
                 <i class="bi bi-cart-plus"></i>
             </button>

@@ -213,6 +213,12 @@
     const id = toNumber(rawItem.id, 0);
     if (!id) return null;
 
+    const status = String(rawItem.status || "Đang kinh doanh");
+    const isDiscontinued =
+      typeof rawItem.isDiscontinued === "boolean"
+        ? rawItem.isDiscontinued
+        : status === "Ngừng kinh doanh";
+
     return {
       id,
       name: String(rawItem.name || "San pham"),
@@ -220,7 +226,9 @@
       category: String(rawItem.category || "Khác"),
       image: String(rawItem.image || ""),
       price: toNumber(rawItem.price, 0),
-      quantity: Math.max(1, Math.floor(toNumber(rawItem.quantity, 1)))
+      quantity: Math.max(1, Math.floor(toNumber(rawItem.quantity, 1))),
+      status,
+      isDiscontinued
     };
   };
 
@@ -387,13 +395,17 @@
     const productId = toNumber(dataset.productId, 0);
     if (!productId) return null;
 
+    const status = String(dataset.productStatus || "Đang kinh doanh");
+
     return {
       id: productId,
       name: String(dataset.productName || "Sản phẩm"),
       brand: String(dataset.productBrand || "N/A"),
       category: String(dataset.productCategory || "Khác"),
       price: toNumber(dataset.productPrice, 0),
-      image: String(dataset.productImage || "")
+      image: String(dataset.productImage || ""),
+      status,
+      isDiscontinued: status === "Ngừng kinh doanh"
     };
   };
 

@@ -29,8 +29,12 @@
                     </div>
                     <div class="flash-sale-stats">
                         <div class="flash-stat">
-                            <strong>{{ promotions|length }}</strong>
+                            <strong>{{ active_promotions|length }}</strong>
                             <span>Mã đang hoạt động</span>
+                        </div>
+                        <div class="flash-stat">
+                            <strong>{{ upcoming_promotions|length }}</strong>
+                            <span>Mã sắp áp dụng</span>
                         </div>
                         <div class="flash-stat">
                             <strong>{{ saved_promotion_count }}</strong>
@@ -58,40 +62,95 @@
                 </a>
             </div>
 
-            {% if promotions %}
-            <section class="flash-sale-grid">
-                {% for promo in promotions %}
-                <article class="flash-card">
-                    <div class="flash-card-header">
-                        <div class="flash-code-row">
-                            <div class="flash-code-wrap">
-                                <div class="flash-code">{{ promo.code }}</div>
-                                <div class="flash-code-text">
-                                    <div class="flash-promo-text">{{ promo.text }}</div>
-                                    <div class="flash-meta">
-                                        {{ promo.scope_text }} · {{ promo.start_date|date:"d/m/Y" }} - {{ promo.end_date|date:"d/m/Y" }} · Còn {{ promo.usage_left }} lượt
+            <!-- Active Promotions Section -->
+            {% if active_promotions %}
+            <section class="flash-sale-section">
+                <div class="flash-sale-section-header">
+                    <h3>
+                        <i class="bi bi-lightning"></i>
+                        Mã đang hoạt động
+                    </h3>
+                    <span class="badge bg-success">{{ active_promotions|length }}</span>
+                </div>
+                <div class="flash-sale-grid">
+                    {% for promo in active_promotions %}
+                    <article class="flash-card">
+                        <div class="flash-card-header">
+                            <div class="flash-code-row">
+                                <div class="flash-code-wrap">
+                                    <div class="flash-code">{{ promo.code }}</div>
+                                    <div class="flash-code-text">
+                                        <div class="flash-promo-text">{{ promo.text }}</div>
+                                        <div class="flash-meta">
+                                            {{ promo.scope_text }} · {{ promo.start_date|date:"d/m/Y" }} - {{ promo.end_date|date:"d/m/Y" }} · Còn {{ promo.usage_left }} lượt
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                            <div class="flash-card-actions">
-                                <form method="post" style="display:inline; margin:0;">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="code" value="{{ promo.code }}" />
-                                    <input type="hidden" name="action" value="{% if promo.is_saved %}remove{% else %}save{% endif %}" />
-                                    <button type="submit" class="flash-btn {% if promo.is_saved %}secondary{% else %}primary{% endif %}">
-                                        <i class="bi {% if promo.is_saved %}bi-bookmark-dash{% else %}bi-bookmark-plus{% endif %}"></i>
-                                        {{ promo.save_button_label }}
-                                    </button>
-                                </form>
+                                <div class="flash-card-actions">
+                                    <form method="post" style="display:inline; margin:0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="code" value="{{ promo.code }}" />
+                                        <input type="hidden" name="action" value="{% if promo.is_saved %}remove{% else %}save{% endif %}" />
+                                        <button type="submit" class="flash-btn {% if promo.is_saved %}secondary{% else %}primary{% endif %}">
+                                            <i class="bi {% if promo.is_saved %}bi-bookmark-dash{% else %}bi-bookmark-plus{% endif %}"></i>
+                                            {{ promo.save_button_label }}
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </article>
-                {% endfor %}
+                    </article>
+                    {% endfor %}
+                </div>
             </section>
-            {% else %}
+            {% endif %}
+
+            <!-- Upcoming Promotions Section -->
+            {% if upcoming_promotions %}
+            <section class="flash-sale-section">
+                <div class="flash-sale-section-header">
+                    <h3>
+                        <i class="bi bi-hourglass-split"></i>
+                        Mã sắp áp dụng
+                    </h3>
+                    <span class="badge bg-info">{{ upcoming_promotions|length }}</span>
+                </div>
+                <div class="flash-sale-grid">
+                    {% for promo in upcoming_promotions %}
+                    <article class="flash-card flash-card-upcoming">
+                        <div class="flash-card-header">
+                            <div class="flash-code-row">
+                                <div class="flash-code-wrap">
+                                    <div class="flash-code">{{ promo.code }}</div>
+                                    <div class="flash-code-text">
+                                        <div class="flash-promo-text">{{ promo.text }}</div>
+                                        <div class="flash-meta">
+                                            {{ promo.scope_text }} · Áp dụng từ {{ promo.start_date|date:"d/m/Y H:i" }}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="flash-card-actions">
+                                    <form method="post" style="display:inline; margin:0;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="code" value="{{ promo.code }}" />
+                                        <input type="hidden" name="action" value="{% if promo.is_saved %}remove{% else %}save{% endif %}" />
+                                        <button type="submit" class="flash-btn {% if promo.is_saved %}secondary{% else %}primary{% endif %}">
+                                            <i class="bi {% if promo.is_saved %}bi-bookmark-dash{% else %}bi-bookmark-plus{% endif %}"></i>
+                                            {{ promo.save_button_label }}
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </article>
+                    {% endfor %}
+                </div>
+            </section>
+            {% endif %}
+
+            {% if not active_promotions and not upcoming_promotions %}
             <div class="flash-empty">
-                Hiện chưa có mã giảm giá nào đang hoạt động.
+                Hiện chưa có mã giảm giá nào.
             </div>
             {% endif %}
         </div>
@@ -101,6 +160,8 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{% static 'store/cart.js' %}?v={{ css_version }}"></script>
+<link rel="stylesheet" href="/static/store/chatbot.css">
+<script src="/static/store/chatbot.js"></script>
 </body>
 </html>
 
