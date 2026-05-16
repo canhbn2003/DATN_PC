@@ -1393,6 +1393,23 @@ class UserAddressAdmin(VietnameseAdminMixin, admin.ModelAdmin):
 	def display_created_at(self, obj):
 		return obj.created_at_addresses.strftime("%d/%m/%Y %H:%M") if obj.created_at_addresses else ""
 
+	# Disable delete for UserAddress in admin
+	def has_delete_permission(self, request, obj=None):
+		return False
+
+	# Remove bulk delete action
+	def get_actions(self, request):
+		actions = super().get_actions(request) or {}
+		if 'delete_selected' in actions:
+			del actions['delete_selected']
+		return actions
+
+	# Hide delete button on change form
+	def changeform_view(self, request, object_id=None, form_url='', extra_context=None):
+		extra_context = extra_context or {}
+		extra_context.update({'show_delete': False})
+		return super().changeform_view(request, object_id, form_url, extra_context=extra_context)
+
 
 @admin.register(WebsiteSettings)
 class WebsiteSettingsAdmin(VietnameseAdminMixin, admin.ModelAdmin):

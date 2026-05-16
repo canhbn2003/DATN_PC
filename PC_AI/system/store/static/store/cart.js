@@ -10,6 +10,26 @@
     return Number.isFinite(parsed) ? parsed : fallback;
   };
 
+  const normalizeImageUrl = (rawValue) => {
+    const value = String(rawValue || "").trim();
+    if (!value) return "";
+
+    if (
+      value.startsWith("http://") ||
+      value.startsWith("https://") ||
+      value.startsWith("//") ||
+      value.startsWith("/")
+    ) {
+      return value;
+    }
+
+    const normalized = value.replace(/\\/g, "/").replace(/^\/+/, "");
+    if (normalized.toLowerCase().startsWith("media/")) {
+      return `/${normalized}`;
+    }
+    return `/media/${normalized}`;
+  };
+
   const getCsrfToken = () => {
     const inputToken = document.querySelector("[name='csrfmiddlewaretoken']")?.value || "";
     if (inputToken) return inputToken;
@@ -224,7 +244,7 @@
       name: String(rawItem.name || "San pham"),
       brand: String(rawItem.brand || "N/A"),
       category: String(rawItem.category || "Khác"),
-      image: String(rawItem.image || ""),
+      image: normalizeImageUrl(rawItem.image),
       price: toNumber(rawItem.price, 0),
       quantity: Math.max(1, Math.floor(toNumber(rawItem.quantity, 1))),
       status,
@@ -403,7 +423,7 @@
       brand: String(dataset.productBrand || "N/A"),
       category: String(dataset.productCategory || "Khác"),
       price: toNumber(dataset.productPrice, 0),
-      image: String(dataset.productImage || ""),
+      image: normalizeImageUrl(dataset.productImage),
       status,
       isDiscontinued: status === "Ngừng kinh doanh"
     };

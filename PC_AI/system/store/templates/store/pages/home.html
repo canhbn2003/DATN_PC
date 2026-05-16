@@ -356,6 +356,7 @@
                     </div>
                     <button type="submit" class="auth-submit-btn">Đăng nhập</button>
                 </form>
+                <div id="login-lockdown" style="display:none; margin-top:10px; color:#c00; font-weight:600;" text-align="center">Vui lòng thử lại sau <span id="login-lockdown-countdown"></span>.</div>
             </div>
 
 
@@ -461,6 +462,36 @@
     document.addEventListener("DOMContentLoaded", function() {
         const loginForm = document.getElementById('login-form');
         const errorDiv = document.getElementById('login-error-msg');
+        const lockdownDiv = document.getElementById('login-lockdown');
+        const lockdownCountdown = document.getElementById('login-lockdown-countdown');
+        const loginSubmitBtn = loginForm ? loginForm.querySelector('button[type="submit"]') : null;
+
+        // Initialize countdown if server provided a lock timestamp
+        try {
+            const lockedTs = parseInt('{{ login_locked_until_ts|default:"" }}' || '');
+            if (!isNaN(lockedTs) && lockedTs > Date.now()) {
+                if (lockdownDiv) lockdownDiv.style.display = '';
+                if (loginSubmitBtn) loginSubmitBtn.disabled = true;
+                const update = () => {
+                    const remaining = lockedTs - Date.now();
+                    if (remaining <= 0) {
+                        if (lockdownDiv) lockdownDiv.style.display = 'none';
+                        if (loginSubmitBtn) loginSubmitBtn.disabled = false;
+                        if (lockdownCountdown) lockdownCountdown.textContent = '';
+                        clearInterval(intervalId);
+                        return;
+                    }
+                    const secs = Math.floor(remaining / 1000);
+                    const minutes = Math.floor(secs / 60);
+                    const seconds = secs % 60;
+                    lockdownCountdown.textContent = (minutes ? (minutes + ' phút ') : '') + seconds + ' giây';
+                };
+                update();
+                const intervalId = setInterval(update, 1000);
+            }
+        } catch (e) {
+            // ignore
+        }
         if (loginForm && errorDiv) {
             loginForm.addEventListener('submit', function(e) {
                 e.preventDefault();
@@ -482,6 +513,32 @@
                     } else {
                         errorDiv.textContent = data.message || 'Đăng nhập thất bại.';
                         errorDiv.style.display = '';
+                        // if server sent lock timestamp, start client countdown
+                        if (data.login_locked_until_ts) {
+                            const lockedTs = parseInt(data.login_locked_until_ts);
+                            if (!isNaN(lockedTs) && lockedTs > Date.now()) {
+                                if (lockdownDiv) lockdownDiv.style.display = '';
+                                if (loginSubmitBtn) loginSubmitBtn.disabled = true;
+                                if (lockdownCountdown) {
+                                    const start = () => {
+                                        const remaining = lockedTs - Date.now();
+                                        if (remaining <= 0) {
+                                            if (lockdownDiv) lockdownDiv.style.display = 'none';
+                                            if (loginSubmitBtn) loginSubmitBtn.disabled = false;
+                                            lockdownCountdown.textContent = '';
+                                            clearInterval(intId);
+                                            return;
+                                        }
+                                        const secs = Math.floor(remaining / 1000);
+                                        const minutes = Math.floor(secs / 60);
+                                        const seconds = secs % 60;
+                                        lockdownCountdown.textContent = (minutes ? (minutes + ' phút ') : '') + seconds + ' giây';
+                                    };
+                                    start();
+                                    const intId = setInterval(start, 1000);
+                                }
+                            }
+                        }
                     }
                 })
                 .catch(() => {
@@ -605,6 +662,29 @@
                     })
                     .then(res => res.json().then(data => ({status: res.status, data})))
                     .then(({status, data}) => {
+                        if (data.success) {
+                            forgotPanel.classList.remove('active');
+                            forgotPanel.style.display = 'none';
+                            otpPanel.classList.add('active');
+                            otpPanel.style.display = '';
+                            setAuthMainTitleForgot(true);
+                            if (otpErrorMsg) otpErrorMsg.style.display = 'none';
+                        } else {
+                            if (data.message && data.message.includes('không tồn tại')) {
+                                forgotErrorMsg.textContent = data.message;
+                            } else {
+                                alert(data.message || 'Có lỗi xảy ra!');
+                            }
+                        }
+                    })
+                    .catch(() => {
+                        if (otpErrorMsg) {
+                            otpErrorMsg.textContent = 'Có lỗi xảy ra!';
+                            otpErrorMsg.style.display = '';
+                        }
+                    });
+                });
+            }
 
             if (otpForm && otpPanel && resetPasswordPanel) {
                 otpForm.addEventListener('submit', function(e) {
@@ -684,30 +764,6 @@
                     });
                 });
             }
-                        if (data.success) {
-                            forgotPanel.classList.remove('active');
-                            forgotPanel.style.display = 'none';
-                            otpPanel.classList.add('active');
-                            otpPanel.style.display = '';
-                            setAuthMainTitleForgot(true);
-                            if (otpErrorMsg) otpErrorMsg.style.display = 'none';
-                        } else {
-                            if (data.message && data.message.includes('không tồn tại')) {
-                                forgotErrorMsg.textContent = data.message;
-                            } else {
-                                alert(data.message || 'Có lỗi xảy ra!');
-                            }
-                        }
-                    })
-                    .catch(() => {
-                        if (otpErrorMsg) {
-                            otpErrorMsg.textContent = 'Có lỗi xảy ra!';
-                            otpErrorMsg.style.display = '';
-                        }
-                    });
-                });
-            }
-
             if (backToForgotLink && otpPanel && forgotPanel) {
                 backToForgotLink.addEventListener('click', function(e) {
                     e.preventDefault();
@@ -900,8 +956,6 @@
             }
         })();
     </script>
-<link rel="stylesheet" href="/static/store/chatbot.css">
-<script src="/static/store/chatbot.js"></script>
 <link rel="stylesheet" href="/static/store/chatbot.css">
 <script src="/static/store/chatbot.js"></script>
 </body>

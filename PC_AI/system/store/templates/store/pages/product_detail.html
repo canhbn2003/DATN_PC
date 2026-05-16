@@ -398,6 +398,7 @@
 
                     <button type="submit" class="auth-submit-btn">Đăng nhập</button>
                 </form>
+                <!-- login lockdown message inserted dynamically -->
             </div>
 
             <div class="auth-panel{% if auth_tab == 'register' %} active{% endif %}" data-auth-panel="register">
@@ -763,6 +764,34 @@ function getCookie(name) {
             }
         }
     }
+    // Initialize login lockdown countdown if provided by server
+    try {
+        const lockedTs = parseInt('{{ login_locked_until_ts|default:"" }}' || '');
+        const lockdownDiv = document.getElementById('login-lockdown');
+        const lockdownCountdown = document.getElementById('login-lockdown-countdown');
+        const loginForm = document.querySelector('#authModal form[action="/api/auth/login/"]');
+        const loginSubmitBtn = loginForm ? loginForm.querySelector('button[type="submit"]') : null;
+        if (!isNaN(lockedTs) && lockedTs > Date.now()) {
+            if (lockdownDiv) lockdownDiv.style.display = '';
+            if (loginSubmitBtn) loginSubmitBtn.disabled = true;
+            const update = () => {
+                const remaining = lockedTs - Date.now();
+                if (remaining <= 0) {
+                    if (lockdownDiv) lockdownDiv.style.display = 'none';
+                    if (loginSubmitBtn) loginSubmitBtn.disabled = false;
+                    if (lockdownCountdown) lockdownCountdown.textContent = '';
+                    clearInterval(intervalId);
+                    return;
+                }
+                const secs = Math.floor(remaining / 1000);
+                const minutes = Math.floor(secs / 60);
+                const seconds = secs % 60;
+                if (lockdownCountdown) lockdownCountdown.textContent = (minutes ? (minutes + ' phút ') : '') + seconds + ' giây';
+            };
+            update();
+            const intervalId = setInterval(update, 1000);
+        }
+    } catch (e) {}
     return cookieValue;
 }
 const csrftoken = getCookie('csrftoken');
@@ -835,6 +864,73 @@ document.addEventListener('DOMContentLoaded', function() {
             .catch(() => { msg.textContent = 'Lỗi xác nhận.'; });
         });
     }
+    // AJAX login for product_detail modal
+    try {
+        const prodLoginForm = document.querySelector('#authModal form[action="/api/auth/login/"]');
+        if (prodLoginForm) {
+            // insert lockdown div after form
+            const existingLock = document.getElementById('login-lockdown');
+            if (!existingLock) {
+                const div = document.createElement('div');
+                div.id = 'login-lockdown';
+                div.style.display = 'none';
+                div.style.marginTop = '10px';
+                div.style.color = '#c00';
+                div.style.fontWeight = '600';
+                div.innerHTML = 'Vui lòng thử lại sau <span id="login-lockdown-countdown"></span>.';
+                prodLoginForm.parentNode.insertBefore(div, prodLoginForm.nextSibling);
+            }
+
+            prodLoginForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+                const formData = new FormData(prodLoginForm);
+                const errorEl = document.getElementById('login-error-msg') || null;
+                if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+                fetch(prodLoginForm.action, {
+                    method: 'POST',
+                    headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': getCookie('csrftoken') },
+                    body: formData,
+                })
+                .then(res => res.json().then(data => ({status: res.status, ...data})))
+                .then(data => {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        if (errorEl) { errorEl.textContent = data.message || 'Đăng nhập thất bại.'; errorEl.style.display = ''; }
+                        if (data.login_locked_until_ts) {
+                            const lockedTs = parseInt(data.login_locked_until_ts);
+                            const lockdownDiv = document.getElementById('login-lockdown');
+                            const lockdownCountdown = document.getElementById('login-lockdown-countdown');
+                            const submitBtn = prodLoginForm.querySelector('button[type="submit"]');
+                            if (!isNaN(lockedTs) && lockedTs > Date.now()) {
+                                if (lockdownDiv) lockdownDiv.style.display = '';
+                                if (submitBtn) submitBtn.disabled = true;
+                                const start = () => {
+                                    const remaining = lockedTs - Date.now();
+                                    if (remaining <= 0) {
+                                        if (lockdownDiv) lockdownDiv.style.display = 'none';
+                                        if (submitBtn) submitBtn.disabled = false;
+                                        if (lockdownCountdown) lockdownCountdown.textContent = '';
+                                        clearInterval(iid);
+                                        return;
+                                    }
+                                    const secs = Math.floor(remaining / 1000);
+                                    const minutes = Math.floor(secs / 60);
+                                    const seconds = secs % 60;
+                                    if (lockdownCountdown) lockdownCountdown.textContent = (minutes ? (minutes + ' phút ') : '') + seconds + ' giây';
+                                };
+                                start();
+                                const iid = setInterval(start, 1000);
+                            }
+                        }
+                    }
+                })
+                .catch(() => {
+                    if (errorEl) { errorEl.textContent = 'Có lỗi xảy ra. Vui lòng thử lại.'; errorEl.style.display = ''; }
+                });
+            });
+        }
+    } catch (e) {}
 });
 </script>
 </html>

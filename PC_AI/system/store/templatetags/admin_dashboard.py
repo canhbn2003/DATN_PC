@@ -63,7 +63,10 @@ def _growth_series(period):
         month_map = {(point.year, point.month): {"orders": 0, "revenue": Decimal("0")} for point in month_points}
 
         start_dt = _aware_start_of_day(month_points[0])
-        order_rows = Order.objects.filter(created_at_orders__gte=start_dt).values_list("created_at_orders", "total_price_orders")
+        order_rows = (
+            Order.objects.filter(status_orders="completed", created_at_orders__gte=start_dt)
+            .values_list("created_at_orders", "total_price_orders")
+        )
 
         for created_at, total in order_rows:
             local_day = timezone.localtime(created_at, timezone_current).date()
@@ -93,7 +96,13 @@ def _growth_series(period):
 
     start_dt = _aware_start_of_day(week_points[0])
     end_dt = _aware_start_of_day(week_points[-1] + timedelta(days=1))
-    order_rows = Order.objects.filter(created_at_orders__gte=start_dt, created_at_orders__lt=end_dt).values_list("created_at_orders", "total_price_orders")
+    order_rows = (
+        Order.objects.filter(
+            status_orders="completed",
+            created_at_orders__gte=start_dt,
+            created_at_orders__lt=end_dt,
+        ).values_list("created_at_orders", "total_price_orders")
+    )
 
     for created_at, total in order_rows:
         local_day = timezone.localtime(created_at, timezone_current).date()
@@ -139,7 +148,10 @@ def admin_dashboard_data(period="week"):
     total_categories = Category.objects.count()
     total_users = User.objects.count()
     total_orders = Order.objects.count()
-    total_revenue = Order.objects.aggregate(total=Sum("total_price_orders"))["total"] or Decimal("0")
+    total_revenue = (
+        Order.objects.filter(status_orders="completed").aggregate(total=Sum("total_price_orders"))["total"]
+        or Decimal("0")
+    )
     active_promotions = Promotion.objects.filter(status=True, start_date__lte=timezone.now(), end_date__gte=timezone.now()).count()
     active_discounts = Discount.objects.filter(status=True, start_date__lte=timezone.now(), end_date__gte=timezone.now()).count()
     pending_orders = Order.objects.filter(status_orders="pending").count()

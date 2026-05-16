@@ -167,6 +167,58 @@
     </aside>
 </div>
 
+<div class="buildpc-modal" data-buildpc-modal aria-hidden="true">
+    <div class="buildpc-modal-backdrop" data-buildpc-close></div>
+    <div class="buildpc-modal-panel" role="dialog" aria-modal="true" aria-label="Build PC AI">
+        <div class="buildpc-modal-head">
+            <div>
+                <h3>Build PC cùng AI</h3>
+                <p>Nhập nhu cầu, ngân sách — hệ thống sẽ đề xuất cấu hình tối ưu.</p>
+            </div>
+            <button type="button" class="buildpc-close" data-buildpc-close aria-label="Đóng">
+                <i class="bi bi-x-lg"></i>
+            </button>
+        </div>
+        <form class="buildpc-form" data-buildpc-form>
+            <div class="buildpc-form-main">
+                <textarea data-buildpc-input rows="4" placeholder="Ví dụ: build PC chơi game 2K, ưu tiên FPS, cần máy yên tĩnh..."></textarea>
+                <div class="buildpc-form-row">
+                    <div class="buildpc-field">
+                        <label>Ngân sách (VND)</label>
+                        <input type="number" min="0" step="100000" data-buildpc-budget placeholder="25000000" />
+                    </div>
+                    <div class="buildpc-field">
+                        <label>Mục đích</label>
+                        <select data-buildpc-intent>
+                            <option value="">Tự động</option>
+                            <option value="gaming">Gaming</option>
+                            <option value="graphics">Đồ họa</option>
+                            <option value="office">Văn phòng</option>
+                            <option value="stream">Streaming</option>
+                            <option value="balanced">Cân bằng</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="buildpc-chips">
+                    <button type="button" class="buildpc-chip" data-buildpc-chip="Build PC gaming 2K khoảng 25 triệu">Gaming 2K ~25tr</button>
+                    <button type="button" class="buildpc-chip" data-buildpc-chip="Build PC đồ họa dựng phim khoảng 35 triệu">Đồ họa ~35tr</button>
+                    <button type="button" class="buildpc-chip" data-buildpc-chip="Build PC văn phòng gọn nhẹ khoảng 12 triệu">Văn phòng ~12tr</button>
+                </div>
+            </div>
+            <div class="buildpc-form-actions">
+                <div class="buildpc-status" data-buildpc-status></div>
+                <button type="submit" class="buildpc-submit" data-buildpc-submit>
+                    <i class="bi bi-cpu"></i>
+                    Tạo cấu hình
+                </button>
+            </div>
+        </form>
+        <div class="buildpc-results" data-buildpc-results>
+            <div class="buildpc-placeholder">Hãy nhập yêu cầu để nhận cấu hình AI.</div>
+        </div>
+    </div>
+</div>
+
 
 
 <script>
@@ -200,6 +252,10 @@
     if (buildPcButton) {
         buildPcButton.addEventListener("click", (event) => {
             event.preventDefault();
+            if (window.PCBuildModal && typeof window.PCBuildModal.open === "function") {
+                window.PCBuildModal.open();
+                return;
+            }
             if (window.pcAiChatbox && typeof window.pcAiChatbox.open === "function") {
                 window.pcAiChatbox.open();
             }
@@ -373,6 +429,8 @@
             .replaceAll('"', "&quot;")
             .replaceAll("'", "&#39;");
     };
+
+    const formatMoney = (value) => `${Number(value || 0).toLocaleString("vi-VN")} đ`;
 
     const formatTime = (isoString) => {
         if (!isoString) return "";
@@ -811,6 +869,100 @@
     };
 
     let lastSuggestedConfig = null;
+    let lastSuggestedItems = [];
+    let lastSuggestedTotalPrice = 0;
+
+    const buildCartItemsFromSuggested = () => {
+        if (Array.isArray(lastSuggestedItems) && lastSuggestedItems.length) {
+            return lastSuggestedItems.map((item) => ({ id: item.id, quantity: 1 }));
+        }
+
+        if (lastSuggestedConfig && Object.keys(lastSuggestedConfig).length > 0) {
+            return Object.values(lastSuggestedConfig).map((pid) => ({ id: pid, quantity: 1 }));
+        }
+
+        return [];
+    };
+
+    const addProductToCart = async (productId, btn) => {
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = "Dang them...";
+
+        try {
+            const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || 
+                             document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)?.[1] || "";
+            
+            const response = await fetch('/api/cart/save-to-session/', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ cart_items: [{ id: productId, quantity: 1 }], sync_db: true })
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                if (response.status === 401) {
+                    addMessage("assistant", "Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng", false);
+                } else {
+                    throw new Error(payload.error || 'Khong the them san pham vao gio hang.');
+                }
+            } else {
+                btn.innerHTML = 'Da them!';
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }, 1200);
+            }
+        } catch (error) {
+            addMessage("assistant", error && error.message ? error.message : "Không thể thêm sản phẩm. Bạn thử lại nhé.", false);
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    };
+
+    const addAllSuggestedToCart = async (btn) => {
+        const cart_items = buildCartItemsFromSuggested();
+        if (!cart_items.length) return;
+
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = "Dang them...";
+
+        try {
+            const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || 
+                             document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)?.[1] || "";
+            
+            const response = await fetch('/api/cart/save-to-session/', {
+                method: 'POST',
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                },
+                body: JSON.stringify({ cart_items, sync_db: true })
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                if (response.status === 401) {
+                    addMessage("assistant", "Vui lòng đăng nhập để thêm sản phẩm vào giỏ hàng", false);
+                } else {
+                    throw new Error(payload.error || 'Khong the luu cau hinh vao gio hang.');
+                }
+            } else {
+                btn.innerHTML = 'Da them tat ca!';
+                setTimeout(() => {
+                    btn.disabled = false;
+                    btn.innerHTML = originalHtml;
+                }, 1200);
+            }
+        } catch (error) {
+            addMessage("assistant", error && error.message ? error.message : "Không thể thêm sản phẩm. Bạn thử lại nhé.", false);
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    };
+
     const renderMessages = () => {
         if (!history.length) {
             messagesBox.innerHTML = "";
@@ -823,8 +975,32 @@
             .map((item, idx) => {
                 const roleClass = item.role === "user" ? "is-user" : "is-assistant";
                 let bubble = `<div class="pcai-message-bubble">${escapeHtml(item.text).replaceAll("\n", "<br />")}</div>`;
-                // Nếu là assistant, cuối cùng, có lastSuggestedConfig, thêm nút
-                if (
+                const hasSuggestedProducts = item.role === "assistant" && idx === history.length - 1 && Array.isArray(lastSuggestedItems) && lastSuggestedItems.length > 0;
+                if (hasSuggestedProducts) {
+                    const productCards = lastSuggestedItems
+                        .map((product, pIdx) => `
+                            <div class="pcai-product-card">
+                                <div class="pcai-product-header">
+                                    <a class="pcai-product-link" href="${product.url}" data-product-id="${product.id}">${escapeHtml(product.name)}</a>
+                                </div>
+                                <div class="pcai-product-meta">${escapeHtml(product.brand || "")} • Tồn kho: ${product.stock}</div>
+                                <div class="pcai-product-footer">
+                                    <div class="pcai-product-price">${escapeHtml(formatMoney(product.price))}</div>
+                                    <button class="pcai-add-to-cart-btn" data-product-id="${product.id}" data-idx="${pIdx}"><i class="bi bi-cart-plus"></i> Thêm</button>
+                                </div>
+                            </div>
+                        `)
+                        .join("");
+                    bubble += `
+                        <div class="pcai-suggestion-panel">
+                            <div class="pcai-suggestion-total">Tổng cộng: ${escapeHtml(formatMoney(lastSuggestedTotalPrice))}</div>
+                            <div class="pcai-product-list">${productCards}</div>
+                            <div style="margin-top:10px;text-align:center;">
+                                <button class="pcai-add-all-btn" type="button"><i class="bi bi-cart-check"></i> Thêm tất cả vào giỏ</button>
+                            </div>
+                        </div>
+                    `;
+                } else if (
                     item.role === "assistant" &&
                     idx === history.length - 1 &&
                     lastSuggestedConfig &&
@@ -837,7 +1013,29 @@
             .join("");
         messagesBox.innerHTML = html;
         // Gắn event cho nút nếu có
-        if (lastSuggestedConfig && Object.keys(lastSuggestedConfig).length > 0) {
+        if (Array.isArray(lastSuggestedItems) && lastSuggestedItems.length > 0) {
+            // Xử lý click trên từng link sản phẩm
+            messagesBox.querySelectorAll('.pcai-product-link').forEach((link) => {
+                link.onclick = (e) => {
+                    e.preventDefault();
+                    window.location.href = link.href;
+                };
+            });
+            // Xử lý nút thêm từng sản phẩm
+            messagesBox.querySelectorAll('.pcai-add-to-cart-btn').forEach((btn) => {
+                btn.onclick = async function () {
+                    const productId = parseInt(btn.dataset.productId);
+                    await addProductToCart(productId, btn);
+                };
+            });
+            // Xử lý nút thêm tất cả
+            const addAllBtn = messagesBox.querySelector('.pcai-add-all-btn');
+            if (addAllBtn) {
+                addAllBtn.onclick = async function () {
+                    await addAllSuggestedToCart(addAllBtn);
+                };
+            }
+        } else if (lastSuggestedConfig && Object.keys(lastSuggestedConfig).length > 0) {
             const btn = messagesBox.querySelector('.pcai-use-config-btn');
             if (btn) {
                 btn.onclick = async function () {
@@ -845,10 +1043,16 @@
                     btn.innerHTML = 'Đang thêm...';
                     try {
                         // Chuyển cấu hình thành mảng cart_items
-                        const cart_items = Object.values(lastSuggestedConfig).map(pid => ({ product_id: pid, quantity: 1 }));
+                        const cart_items = Object.values(lastSuggestedConfig).map(pid => ({ id: pid, quantity: 1 }));
+                        const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || 
+                                         document.cookie.match(/(?:^|; )csrftoken=([^;]+)/)?.[1] || "";
+                        
                         const resp = await fetch('/api/cart/save-to-session/', {
                             method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
+                            headers: { 
+                                'Content-Type': 'application/json',
+                                'X-CSRFToken': csrfToken
+                            },
                             body: JSON.stringify({ cart_items, sync_db: true })
                         });
                         const data = await resp.json();
@@ -964,9 +1168,18 @@
             } else {
                 lastSuggestedConfig = null;
             }
+            if (Array.isArray(payload.suggested_items) && payload.suggested_items.length > 0) {
+                lastSuggestedItems = payload.suggested_items;
+                lastSuggestedTotalPrice = Number(payload.suggested_total_price || 0);
+            } else {
+                lastSuggestedItems = [];
+                lastSuggestedTotalPrice = 0;
+            }
             addMessage("assistant", payload.answer || "Chua nhan duoc cau tra loi. Ban thu lai nhe.");
         } catch (error) {
             lastSuggestedConfig = null;
+            lastSuggestedItems = [];
+            lastSuggestedTotalPrice = 0;
             addMessage("assistant", error && error.message ? error.message : "Dang co loi ket noi toi tro ly AI.");
         } finally {
             setSendingState(false);
@@ -1027,6 +1240,287 @@
 
     window.pcAiChatbox = {
         open: openChat,
+    };
+})();
+
+(function () {
+    const modal = document.querySelector("[data-buildpc-modal]");
+    if (!modal) return;
+
+    const openButtons = document.querySelectorAll(".build-pc-btn");
+    const closeButtons = modal.querySelectorAll("[data-buildpc-close]");
+    const form = modal.querySelector("[data-buildpc-form]");
+    const input = modal.querySelector("[data-buildpc-input]");
+    const budgetInput = modal.querySelector("[data-buildpc-budget]");
+    const intentSelect = modal.querySelector("[data-buildpc-intent]");
+    const statusEl = modal.querySelector("[data-buildpc-status]");
+    const resultsEl = modal.querySelector("[data-buildpc-results]");
+    const submitBtn = modal.querySelector("[data-buildpc-submit]");
+    const chips = modal.querySelectorAll("[data-buildpc-chip]");
+
+    let lastConfigs = [];
+
+    const saveConfigAndCheckout = async (target, btn) => {
+        if (!target || !target.items || !target.items.length) return;
+
+        const originalHtml = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = "Dang xu ly...";
+
+        try {
+            const cart_items = target.items.map((item) => ({
+                id: item.product_id,
+                quantity: 1,
+            }));
+
+            const response = await fetch("/api/cart/save-to-session/", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ cart_items, sync_db: true }),
+            });
+            const payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload.error || "Khong the luu cau hinh vao gio hang.");
+            }
+
+            window.location.href = "/checkout/";
+        } catch (error) {
+            setStatus(error && error.message ? error.message : "Khong the mua ngay.", "error");
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        }
+    };
+
+    const formatPrice = (value) => {
+        const amount = Number(value || 0);
+        return `${amount.toLocaleString("vi-VN")} đ`;
+    };
+
+    const setStatus = (message, variant = "") => {
+        if (!statusEl) return;
+        statusEl.textContent = message || "";
+        statusEl.classList.toggle("is-error", variant === "error");
+        statusEl.classList.toggle("is-success", variant === "success");
+    };
+
+    const openModal = () => {
+        modal.classList.add("is-open");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("buildpc-open");
+        if (input) input.focus();
+    };
+
+    const closeModal = () => {
+        modal.classList.remove("is-open");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("buildpc-open");
+    };
+
+    const buildQuestion = () => {
+        const text = (input?.value || "").trim();
+        const budget = (budgetInput?.value || "").trim();
+        const intent = (intentSelect?.value || "").trim();
+
+        let prompt = text;
+        if (intent) {
+            prompt = `Muc dich: ${intent}. ` + prompt;
+        }
+        if (budget) {
+            prompt = `Ngan sach: ${budget} VND. ` + prompt;
+        }
+        return prompt.trim();
+    };
+
+    const renderConfigs = (configs, notes, missing) => {
+        if (!resultsEl) return;
+
+        if (!configs.length) {
+            const missingHtml = (missing && missing.length)
+                ? `<div class="buildpc-missing">\n<strong>Thieu linh kien:</strong> ${missing.join(", ")}\n</div>`
+                : "";
+            resultsEl.innerHTML = `
+                <div class="buildpc-placeholder">${notes || "Khong co cau hinh phu hop."}</div>
+                ${missingHtml}
+            `;
+            return;
+        }
+
+        const cards = configs
+            .map((config, index) => {
+                const items = (config.items || [])
+                    .map(
+                        (item) => `
+                            <div class="buildpc-item">
+                                <div class="buildpc-item-info">
+                                    <span class="buildpc-item-category">${item.category || "Linh kien"}</span>
+                                    <a class="buildpc-item-name" href="${item.url}" target="_blank" rel="noopener">${item.name}</a>
+                                    <span class="buildpc-item-meta">${item.brand || ""} · Ton kho: ${item.stock}</span>
+                                </div>
+                                <div class="buildpc-item-price">${formatPrice(item.price)}</div>
+                            </div>
+                        `
+                    )
+                    .join("");
+
+                const pros = (config.pros || []).map((item) => `<li>${item}</li>`).join("");
+                const cons = (config.cons || []).map((item) => `<li>${item}</li>`).join("");
+
+                return `
+                    <article class="buildpc-card">
+                        <div class="buildpc-card-head">
+                            <div>
+                                <h4>${config.title}</h4>
+                                <p>${config.reason || ""}</p>
+                            </div>
+                            <div class="buildpc-score">${Math.round(config.score || 0)}/100</div>
+                        </div>
+                        <div class="buildpc-card-body">
+                            <div class="buildpc-items">${items}</div>
+                            <div class="buildpc-total">
+                                <span>Tong gia:</span>
+                                <strong>${formatPrice(config.total_price)}</strong>
+                            </div>
+                            <div class="buildpc-procon">
+                                <div>
+                                    <h5>Uu diem</h5>
+                                    <ul>${pros || "<li>Can bang gia/hiệu năng tot</li>"}</ul>
+                                </div>
+                                <div>
+                                    <h5>Nhuoc diem</h5>
+                                    <ul>${cons || "<li>Can can nhac nang cap neu nhu cau cao hon</li>"}</ul>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="buildpc-card-actions">
+                            <button type="button" class="buildpc-use" data-buildpc-use="${index}">
+                                <i class="bi bi-cart-plus"></i>
+                                Them vao gio
+                            </button>
+                            <button type="button" class="buildpc-use buildpc-buy" data-buildpc-buy="${index}">
+                                <i class="bi bi-lightning-charge"></i>
+                                Mua ngay
+                            </button>
+                        </div>
+                    </article>
+                `;
+            })
+            .join("");
+
+        resultsEl.innerHTML = cards;
+
+        resultsEl.querySelectorAll("[data-buildpc-use]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+                const index = Number(btn.dataset.buildpcUse || 0);
+                const target = lastConfigs[index];
+                if (!target || !target.items) return;
+
+                btn.disabled = true;
+                btn.textContent = "Dang them...";
+
+                try {
+                    const cart_items = target.items.map((item) => ({
+                        id: item.product_id,
+                        quantity: 1,
+                    }));
+                    const response = await fetch("/api/cart/save-to-session/", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ cart_items, sync_db: true }),
+                    });
+                    const payload = await response.json();
+                    if (response.ok) {
+                        btn.textContent = "Da them vao gio";
+                        setStatus("Da them cau hinh vao gio hang.", "success");
+                    } else {
+                        btn.textContent = "Thu lai";
+                        setStatus(payload.error || "Khong the them vao gio hang.", "error");
+                    }
+                } catch (error) {
+                    btn.textContent = "Thu lai";
+                    setStatus("Loi ket noi. Vui long thu lai.", "error");
+                } finally {
+                    setTimeout(() => {
+                        btn.disabled = false;
+                        btn.innerHTML = "<i class=\"bi bi-cart-plus\"></i> Them vao gio";
+                    }, 1600);
+                }
+            });
+        });
+
+        resultsEl.querySelectorAll("[data-buildpc-buy]").forEach((btn) => {
+            btn.addEventListener("click", async () => {
+                const index = Number(btn.dataset.buildpcBuy || 0);
+                const target = lastConfigs[index];
+                if (!target || !target.items) return;
+
+                await saveConfigAndCheckout(target, btn);
+            });
+        });
+    };
+
+    openButtons.forEach((btn) => btn.addEventListener("click", (event) => {
+        event.preventDefault();
+        openModal();
+    }));
+
+    closeButtons.forEach((btn) => btn.addEventListener("click", closeModal));
+
+    chips.forEach((chip) => {
+        chip.addEventListener("click", () => {
+            if (!input) return;
+            input.value = chip.dataset.buildpcChip || "";
+            input.focus();
+        });
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && modal.classList.contains("is-open")) {
+            closeModal();
+        }
+    });
+
+    if (form) {
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            const prompt = buildQuestion();
+            if (!prompt) {
+                setStatus("Vui long nhap yeu cau.", "error");
+                return;
+            }
+
+            setStatus("Dang phan tich va tao cau hinh...", "");
+            if (submitBtn) submitBtn.disabled = true;
+            if (resultsEl) resultsEl.innerHTML = "<div class=\"buildpc-loading\">AI dang de xuat cau hinh...</div>";
+
+            try {
+                const response = await fetch("/api/chat/build-pc/", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ question: prompt }),
+                });
+                const payload = await response.json();
+                if (!response.ok) {
+                    throw new Error(payload.error || payload.details || "Khong the tao cau hinh");
+                }
+
+                lastConfigs = payload.configs || [];
+                renderConfigs(lastConfigs, payload.notes, payload.missing_categories || []);
+                setStatus("Da tao cau hinh phu hop!", "success");
+            } catch (error) {
+                lastConfigs = [];
+                if (resultsEl) {
+                    resultsEl.innerHTML = "<div class=\"buildpc-placeholder\">Khong the tao cau hinh. Vui long thu lai.</div>";
+                }
+                setStatus(error && error.message ? error.message : "Co loi xay ra.", "error");
+            } finally {
+                if (submitBtn) submitBtn.disabled = false;
+            }
+        });
+    }
+
+    window.PCBuildModal = {
+        open: openModal,
+        close: closeModal,
     };
 })();
 </script>

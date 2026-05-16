@@ -106,7 +106,7 @@ ORDER_CANCEL_REASONS = [
 ]
 
 VNPAY_PENDING_PAYMENT_KEY = "vnpay_pending_payment"
-GEMINI_CHAT_ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent"
+GEMINI_CHAT_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/{model}:generateContent"
 PRICE_RANGES = (
     ("duoi-5", "Duoi 5 trieu", Decimal("0"), Decimal("5000000")),
     ("5-10", "Tu 5 - 10 trieu", Decimal("5000000"), Decimal("10000000")),
@@ -127,6 +127,36 @@ IMAGE_BLOCKED_KEYWORDS = (
     "facebook",
     "youtube",
 )
+
+
+def _list_gemini_models(api_key):
+    try:
+        response = requests.get(
+            f"https://generativelanguage.googleapis.com/v1/models?key={api_key}",
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        return None, str(exc)
+
+    if response.status_code >= 400:
+        return None, response.text[:1000]
+
+    try:
+        payload = response.json()
+    except Exception as exc:
+        return None, str(exc)
+
+    models = payload.get("models") or []
+    available = []
+    for item in models:
+        name = item.get("name")
+        methods = item.get("supportedGenerationMethods") or []
+        if not name:
+            continue
+        if "generateContent" in methods:
+            available.append(name.replace("models/", ""))
+
+    return available, None
 
 
 def _is_valid_product_image_url(url):
@@ -634,12 +664,30 @@ def _build_promotion_card_data(promotion, promotion_context, saved_codes=None, c
     scope_text = "Áp dụng cho toàn bộ đơn hàng"
     if eligible_product_ids:
         scope_text = f"Áp dụng cho {len(eligible_product_ids)} sản phẩm"
+        # fetch product names for preview (limit to 5)
+        try:
+            product_names = list(
+                Product.objects.filter(id_products__in=list(eligible_product_ids))
+                .values_list("name_products", flat=True)[:5]
+            )
+        except Exception:
+            product_names = []
+        applies_preview = ", ".join([str(name) for name in product_names if name])
+        if applies_preview:
+            if len(eligible_product_ids) > len(product_names):
+                applies_preview = f"{applies_preview}, ..."
+            applies_to_text = f"Áp dụng cho: {applies_preview}"
+        else:
+            applies_to_text = ""
+    else:
+        applies_to_text = ""
 
     usage_left = max(int(promotion.usage_limit or 0) - int(promotion.used_count or 0), 0)
     card_data = {
         "code": promotion.code,
         "text": _format_promotion_text(promotion),
         "scope_text": scope_text,
+        "applies_to_text": applies_to_text,
         "start_date": promotion.start_date,
         "end_date": promotion.end_date,
         "usage_left": usage_left,
@@ -881,6 +929,17 @@ def _common_page_context(request):
     website_bottom_banner_urls = [_normalize_website_asset_url(item) for item in banner_layout["bottom"] if item]
     website_banner_urls = website_main_banner_urls + website_side_banner_urls + website_bottom_banner_urls
     website_name_display = (getattr(website_settings, "website_name", "") or "LTC Computer").strip() or "LTC Computer"
+    # compute lockout timestamp for front-end countdown (ms since epoch)
+    login_locked_until_ts = None
+    locked_iso = request.session.get("login_locked_until")
+    if locked_iso:
+        try:
+            locked_dt = timezone.datetime.fromisoformat(locked_iso)
+            if timezone.is_naive(locked_dt):
+                locked_dt = timezone.make_aware(locked_dt, timezone.get_current_timezone())
+            login_locked_until_ts = int(locked_dt.timestamp() * 1000)
+        except Exception:
+            login_locked_until_ts = None
 
     return {
         "categories": categories,
@@ -904,6 +963,8 @@ def _common_page_context(request):
         "website_side_banner_urls": website_side_banner_urls,
         "website_bottom_banner_urls": website_bottom_banner_urls,
         "website_banner_urls": website_banner_urls,
+        # lockout timestamp in milliseconds since epoch (client-friendly for JS countdown)
+        "login_locked_until_ts": login_locked_until_ts,
     }
 
 
@@ -1289,66 +1350,113 @@ def _extract_ai_chat_intent(question):
     return "balanced"
 
 
-def _build_ai_chat_data_context(question, limit=30):
+def _build_ai_chat_data_context(question, limit=60):
     cleaned_question = str(question or "").strip().lower()
-    tokens = [token for token in re.findall(r"[a-zA-Z0-9_]+", cleaned_question) if len(token) >= 2][:8]
+    tokens = [token for token in re.findall(r"[a-zA-Z0-9_]+", cleaned_question) if len(token) >= 2][:10]
     budget = _extract_ai_chat_budget(cleaned_question)
     intent = _extract_ai_chat_intent(cleaned_question)
 
-    products_qs = _get_public_products_queryset()
+    intent_category_rules = {
+        "gaming": ["CPU", "GPU", "RAM", "SSD", "PSU", "CASE", "COOLING", "MAINBOARD"],
+        "graphics": ["CPU", "GPU", "RAM", "SSD", "PSU", "CASE", "COOLING", "MAINBOARD"],
+        "office": ["CPU", "RAM", "SSD", "PSU", "CASE", "COOLING", "MAINBOARD"],
+        "stream": ["CPU", "GPU", "RAM", "SSD", "PSU", "CASE", "COOLING", "MAINBOARD"],
+        "balanced": ["CPU", "GPU", "RAM", "SSD", "PSU", "CASE", "COOLING", "MAINBOARD"],
+    }
+    required_categories = intent_category_rules.get(intent, intent_category_rules["balanced"])
+    base_limit = max(18, min(int(limit or 60), 120))
+
+    products_qs = _get_public_products_queryset().annotate(total_sold=Coalesce(Sum("orderitem__quantity_order_items"), 0))
+    candidate_products = []
+    seen_product_ids = set()
+
+    def add_products(items):
+        for product in items:
+            product_id = getattr(product, "id_products", None)
+            if product_id is None or product_id in seen_product_ids:
+                continue
+            candidate_products.append(product)
+            seen_product_ids.add(product_id)
+            if len(candidate_products) >= base_limit:
+                return
+
     if tokens:
         token_query = Q()
         for token in tokens:
             token_query |= Q(name_products__icontains=token)
             token_query |= Q(brand__icontains=token)
+            token_query |= Q(description__icontains=token)
             token_query |= Q(id_categories__name_categories__icontains=token)
-        products_qs = products_qs.filter(token_query)
+        token_matches = list(products_qs.filter(token_query).order_by("-total_sold", "-id_products")[: base_limit * 2])
+        add_products(token_matches)
 
-    intent_category_rules = {
-        "gaming": ["CPU", "GPU", "RAM"],
-        "graphics": ["CPU", "GPU", "RAM"],
-        "office": ["CPU", "RAM", "SSD", "Storage", "Main", "Motherboard"],
-        "stream": ["CPU", "GPU", "RAM"],
-        "balanced": ["CPU", "GPU", "RAM", "SSD", "Storage"],
-    }
+    popular_products = list(products_qs.order_by("-total_sold", "-id_products")[: base_limit * 2])
+    add_products(popular_products)
 
-    category_names = intent_category_rules.get(intent, intent_category_rules["balanced"])
-    category_ids = list(
-        _get_public_categories_queryset().filter(name_categories__in=category_names).values_list("id_categories", flat=True)
+    newest_products = list(products_qs.order_by("-id_products")[: base_limit * 2])
+    add_products(newest_products)
+
+    if len(candidate_products) < base_limit:
+        categories = list(_get_public_categories_queryset().order_by("name_categories").values_list("id_categories", flat=True))
+        for category_id in categories:
+            if len(candidate_products) >= base_limit:
+                break
+            category_products = list(products_qs.filter(id_categories_id=category_id).order_by("-total_sold", "-id_products")[:4])
+            add_products(category_products)
+
+    if not candidate_products:
+        candidate_products = list(products_qs.order_by("-id_products")[:base_limit])
+
+    scored_products = []
+    for product in candidate_products:
+        pricing = _get_product_pricing(product)
+        final_price = float(pricing.get("final_price") or 0)
+        name_lower = (product.name_products or "").lower()
+        brand_lower = (product.brand or "").lower()
+        description_lower = (product.description or "").lower()
+        category_name = product.id_categories.name_categories if product.id_categories else "Khac"
+        category_lower = category_name.lower()
+        relevance = 0.0
+
+        for token in tokens:
+            if token in name_lower:
+                relevance += 8.0
+            if token in brand_lower:
+                relevance += 4.0
+            if token in description_lower:
+                relevance += 2.0
+            if token in category_lower:
+                relevance += 3.0
+
+        if tokens and all(token in (name_lower + " " + brand_lower + " " + category_lower) for token in tokens[:4]):
+            relevance += 12.0
+
+        if category_name and category_name.upper() in required_categories:
+            relevance += 6.0
+
+        if budget and final_price > 0:
+            distance_ratio = abs(final_price - float(budget)) / max(float(budget), 1.0)
+            relevance += max(0.0, 28.0 - (distance_ratio * 45.0))
+
+        stock = int(product.stock or 0)
+        if stock > 0:
+            relevance += 5.0
+        else:
+            relevance -= 2.0
+
+        popularity = min(float(getattr(product, "total_sold", 0) or 0), 5000.0) / 400.0
+        scored_products.append((relevance + popularity, int(getattr(product, "total_sold", 0) or 0), product))
+
+    scored_products.sort(key=lambda row: (row[0], row[1], row[2].id_products), reverse=True)
+    products = [row[2] for row in scored_products[:base_limit]]
+
+    available_categories = set(
+        name.strip()
+        for name in _get_public_products_queryset()
+        .values_list("id_categories__name_categories", flat=True)
+        .distinct()
+        if name
     )
-    if category_ids:
-        products_qs = products_qs.filter(id_categories_id__in=category_ids)
-
-    base_limit = max(5, min(int(limit or 30), 60))
-    products = list(products_qs.order_by("-id_products")[:base_limit])
-
-    if budget:
-        price_band = max(budget * 0.35, 1_500_000)
-        min_price = max(0, int(budget - price_band))
-        max_price = int(budget + price_band)
-        price_filtered = list(
-            products_qs.filter(price__gte=min_price, price__lte=max_price)
-            .order_by("price", "-id_products")[:base_limit]
-        )
-        if price_filtered:
-            products = price_filtered
-
-    if not products:
-        products = list(
-            _get_public_products_queryset()
-            .order_by("-id_products")[:12]
-        )
-
-    if budget and products:
-        products = sorted(
-            products,
-            key=lambda product: (
-                abs(float(product.price or 0) - float(budget)),
-                -(float(product.stock or 0)),
-                -int(product.id_products),
-            ),
-        )[:base_limit]
-
     lines = []
     for product in products:
         pricing = _get_product_pricing(product)
@@ -1373,8 +1481,11 @@ def _build_ai_chat_data_context(question, limit=30):
         "products_text": "\n".join(lines),
         "categories_text": categories_text,
         "products_count": len(lines),
+        "catalog_count": products_qs.count(),
         "budget": budget,
         "intent": intent,
+        "required_categories": required_categories,
+        "available_categories": sorted(list(available_categories)),
     }
 
 
@@ -1840,9 +1951,18 @@ def _create_order_from_checkout_data(
                 user_promotion.saved_at = timezone.now()
             user_promotion.save(update_fields=["used_count", "last_used_at", "saved_at"])
 
-            Promotion.objects.filter(id_promotions=consumed_promotion.id_promotions).update(
-                used_count=F("used_count") + 1
-            )
+            # Atomically increment promotion used_count but only if there's remaining usage left.
+            updated = Promotion.objects.filter(
+                id_promotions=consumed_promotion.id_promotions,
+                used_count__lt=F("usage_limit"),
+            ).update(used_count=F("used_count") + 1)
+
+            if not updated:
+                # Another transaction consumed the last usage concurrently.
+                return {
+                    "ok": False,
+                    "message": f"Mã {consumed_promotion.code} đã vừa hết lượt sử dụng. Vui lòng kiểm tra lại.",
+                }
 
             if consumed_promotion.code.upper() in saved_promotion_codes:
                 new_saved_codes = [code for code in saved_promotion_codes if code != consumed_promotion.code.upper()]
@@ -1858,6 +1978,7 @@ def _get_hot_sale_products(limit=10):
     image_exists_subquery = ProductImage.objects.filter(id_products_id=OuterRef("id_products"))
     products_queryset = (
         _get_public_products_queryset()
+        .filter(status="Đang kinh doanh")
         .annotate(has_image=Exists(image_exists_subquery))
     )
     
@@ -3476,17 +3597,18 @@ def ai_data_chat(request):
     if not api_key:
         return JsonResponse({"error": "GEMINI_API_KEY is not configured"}, status=503)
 
-    context = _build_ai_chat_data_context(question)
+    context = _build_ai_chat_data_context(question, limit=60)
     budget_text = "khong xac dinh"
     if context.get("budget"):
         budget_text = f"{int(context['budget']):,} VND"
 
     system_prompt = (
-        "Bạn là trợ lý AI tư vấn build PC cho khách hàng tại cửa hàng. "
-        "Chỉ được phép trả lời dựa trên dữ liệu sản phẩm cung cấp bên dưới, không tự bịa thêm bất kỳ linh kiện hay thông tin nào. "
-        "Nếu không đủ dữ liệu để tư vấn cấu hình, hãy trả lời: 'Xin lỗi, hiện tại cửa hàng chưa đủ linh kiện phù hợp để tư vấn cấu hình theo yêu cầu.' "
-        "Nếu đủ dữ liệu, hãy đề xuất cấu hình PC tối ưu nhất theo yêu cầu khách, ưu tiên sản phẩm còn hàng (tồn kho > 0), giá tốt, đúng mục đích sử dụng. "
-        "Trả lời theo định dạng: \n1. Bảng linh kiện dạng MARKDOWN TABLE, mỗi dòng gồm: Loại linh kiện | Tên | Mã | Giá | ID sản phẩm | Tồn kho.\n2. Sau bảng, trả về cấu hình gợi ý dưới dạng JSON (key là loại linh kiện, value là ID sản phẩm), ví dụ: {\"CPU\":123,\"GPU\":456,...}.\n3. Không giải thích dài dòng, chỉ trả lời ngắn gọn, dễ copy."
+        "Bạn là trợ lý chăm sóc khách hàng của cửa hàng PC AI. "
+        "Hãy trả lời bằng tiếng Việt tự nhiên, ngắn gọn, hữu ích và chỉ dựa trên dữ liệu sản phẩm/danh mục/tồn kho được cung cấp. "
+        "Bạn có thể trả lời các câu hỏi về sản phẩm, giá, tồn kho, danh mục, gợi ý mua hàng, hoặc build PC. "
+        "Không được bịa thêm thông tin ngoài dữ liệu, nhưng cũng không từ chối sớm: nếu thiếu dữ liệu cho một phần nào đó, hãy nói rõ phần còn thiếu và gợi ý lựa chọn gần nhất còn hàng. "
+        "Nếu khách yêu cầu build PC, hãy ưu tiên đề xuất cấu hình tối ưu theo nhu cầu, và khi chắc chắn thì có thể kèm JSON cấu hình gợi ý. "
+        "Nếu câu hỏi chỉ là hỏi thông tin sản phẩm, hãy trả lời trực tiếp, không bắt buộc bảng JSON."
     )
 
     user_prompt = (
@@ -3494,9 +3616,11 @@ def ai_data_chat(request):
         f"Mục đích sử dụng: {context['intent']}\n"
         f"Ngân sách dự kiến: {budget_text}\n"
         f"Danh mục linh kiện hiện có: {context['categories_text']}\n"
-        f"Số sản phẩm trong dữ liệu: {context['products_count']}\n"
+        f"Số sản phẩm trong dữ liệu: {context['products_count']} / {context['catalog_count']}\n"
         "Dữ liệu sản phẩm chi tiết:\n"
-        f"{context['products_text']}"
+        f"{context['products_text']}\n"
+        "Hướng dẫn: nếu khách hỏi thông tin sản phẩm thông thường thì trả lời tự nhiên, không cần JSON. "
+        "Chỉ khi khách hỏi build PC hoặc muốn cấu hình thì mới trả về gợi ý cấu hình ngắn gọn."
     )
 
     payload = {
@@ -3504,24 +3628,58 @@ def ai_data_chat(request):
             {"role": "user", "parts": [{"text": system_prompt + "\n" + user_prompt}]}
         ]
     }
-    # Đúng endpoint: chỉ nối key vào URL nếu endpoint KHÔNG có ?key=...
-    endpoint = GEMINI_CHAT_ENDPOINT
-    if "?key=" in endpoint:
-        endpoint = endpoint.replace("?key=YOUR_API_KEY", f"?key={api_key}")
-    elif endpoint.endswith(":generateContent"):
-        endpoint = f"{endpoint}?key={api_key}"
+    raw_models = os.environ.get("GEMINI_MODEL") or str(getattr(settings, "GEMINI_MODEL", "") or "").strip()
+    if raw_models:
+        models = [model.strip() for model in re.split(r"[\s,]+", raw_models) if model.strip()]
+    else:
+        models = [
+            "gemini-2.5-flash",
+            "gemini-2.5-pro",
+            "gemini-2.0-flash",
+            "gemini-2.0-flash-001",
+            "gemini-2.0-flash-lite-001",
+            "gemini-2.0-flash-lite",
+            "gemini-2.5-flash-lite",
+        ]
 
-    try:
-        resp = requests.post(
-            endpoint,
-            json=payload,
-            timeout=35
-        )
+    parsed = None
+    last_error = None
+
+    for model in models:
+        endpoint = f"{GEMINI_CHAT_ENDPOINT.format(model=model)}?key={api_key}"
+        try:
+            resp = requests.post(
+                endpoint,
+                json=payload,
+                timeout=35
+            )
+        except Exception as e:
+            last_error = {"error": "Gemini request failed", "details": str(e)}
+            continue
+
+        if resp.status_code == 404:
+            last_error = {"error": "Gemini request failed", "details": resp.text, "model": model}
+            continue
+
         if resp.status_code != 200:
             return JsonResponse({"error": "Gemini request failed", "details": resp.text}, status=502)
-        parsed = resp.json()
-    except Exception as e:
-        return JsonResponse({"error": "Gemini request failed", "details": str(e)}, status=502)
+
+        try:
+            parsed = resp.json()
+        except Exception as e:
+            return JsonResponse({"error": "Gemini request failed", "details": str(e)}, status=502)
+
+        if parsed:
+            break
+
+    if not parsed:
+        available_models, list_error = _list_gemini_models(api_key)
+        error_payload = last_error or {"error": "Gemini request failed", "details": "No available model."}
+        if available_models:
+            error_payload["available_models"] = available_models
+        elif list_error:
+            error_payload["available_models_error"] = list_error
+        return JsonResponse(error_payload, status=502)
 
     # Gemini response: { candidates: [ { content: { parts: [ { text: ... } ] } } ] }
     candidates = parsed.get("candidates")

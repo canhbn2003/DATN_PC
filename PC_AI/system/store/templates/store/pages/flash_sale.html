@@ -82,7 +82,7 @@
                                     <div class="flash-code-text">
                                         <div class="flash-promo-text">{{ promo.text }}</div>
                                         <div class="flash-meta">
-                                            {{ promo.scope_text }} · {{ promo.start_date|date:"d/m/Y" }} - {{ promo.end_date|date:"d/m/Y" }} · Còn {{ promo.usage_left }} lượt
+                                            {{ promo.scope_text }}{% if promo.applies_to_text %} · {{ promo.applies_to_text }}{% endif %} · {{ promo.start_date|date:"d/m/Y" }} - {{ promo.end_date|date:"d/m/Y" }} · Còn {{ promo.usage_left }} lượt
                                         </div>
                                     </div>
                                 </div>
@@ -125,7 +125,7 @@
                                     <div class="flash-code-text">
                                         <div class="flash-promo-text">{{ promo.text }}</div>
                                         <div class="flash-meta">
-                                            {{ promo.scope_text }} · Áp dụng từ {{ promo.start_date|date:"d/m/Y H:i" }}
+                                            {{ promo.scope_text }}{% if promo.applies_to_text %} · {{ promo.applies_to_text }}{% endif %} · Áp dụng từ {{ promo.start_date|date:"d/m/Y H:i" }}
                                         </div>
                                     </div>
                                 </div>
